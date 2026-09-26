@@ -129,7 +129,7 @@ def parser() -> argparse.ArgumentParser:
 
     p = add("close-issue")
     p.add_argument("--issue", type=int, required=True)
-    p.add_argument("--reason", choices=["not_planned", "completed"], default="not_planned")
+    p.add_argument("--reason", choices=["not_planned", "completed", "duplicate"], default="not_planned")
 
     p = add("pr-open")
     p.add_argument("--pr", type=int, required=True)

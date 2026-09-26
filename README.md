@@ -41,7 +41,9 @@ things only people should do, **approving what is worth doing** and **reviewing 
 | `devin:blocked` | Devin needs a fact or decision (unclear, false positive, stuck) | yes | comment or edit the issue, re-apply `devin:ready` |
 | `devin:in-review` | PR open and independently verified | yes | merge, request changes, or close |
 | `devin:failed` | Devin tried and could not finish, or verification failed | yes | comment a hint, re-apply `devin:ready` |
-| `devin:rejected` | A human said no (issue closed "not planned", or PR closed unmerged) | no | terminal (reopen + `devin:ready` to retry) |
+| `devin:rejected` | A human declined a PR Devin produced, or a scanner proposal (issue closed "not planned", or PR closed unmerged) | no | terminal (reopen + `devin:ready` to retry) |
+| *(no label)* completed | The PR was merged; the issue closes | no | terminal |
+| *(no label)* not needed | Devin pushed back (blocked) and a human agreed and **closed the issue**: no fix was needed | no | terminal (reopen + `devin:ready` to retry) |
 
 Human actions are ordinary GitHub actions: labels, comments, PR reviews, merge, close.
 * **File a task yourself:** use the *Devin task* issue template (Bug Description, How to Triage / Test, Verify command). It
@@ -49,7 +51,10 @@ Human actions are ordinary GitHub actions: labels, comments, PR reviews, merge, 
   template never applies `devin:ready` itself, so the approval stays with people who can label.
 * **Approve / unblock / retry:** re-apply `devin:ready`. A fresh session starts carrying the human's comments.
 * **Request changes on the PR:** the feedback goes back to Devin as a revision on the *same* PR.
-* **Merge:** the issue closes (`Closes #N`) and the task completes. **Close unmerged:** rejected.
+* **Merge:** the issue closes (`Closes #N`) and the task completes. **Close a PR unmerged:** rejected.
+* **Close a *blocked* issue** (Devin said it's a duplicate, already fixed, or not real): **not needed.** What a
+  close means depends on where the task was, not on which close button you clicked: only a merged PR ever counts
+  as a completed fix, and agreeing with Devin's pushback is never counted against it.
 
 ### Design decisions worth knowing
 - **Explicit outcome from Devin.** Against the real API, `status: running` + `status_detail: waiting_for_user`
@@ -127,8 +132,11 @@ python3 scripts/m0_run_session.py --title "probe" --max-acu 2 \
 `http://localhost:8000` answers it in one screen: fixes merged (hero number, filterable by window), the
 pipeline (backlog, working, verifying, out for review), a **needs-a-human list that states exactly what each task
 needs from you** and how long it has waited, the daily session meter, and outcome metrics: merge rate, first-pass
-rate, independent verification pass rate, median Devin time to review-ready, blocked and failed rates, review
-rounds, sessions per task. Each task has a page with its sessions, PRs, verification, human feedback, and full
+rate, independent verification pass rate, **how pushbacks ended** (closed as not needed vs answered and continued),
+scanner proposal approval rate, median Devin time to review-ready, blocked and failed rates, review rounds, sessions
+per task. Outcomes are mutually exclusive and honest: merged fixes, **caught before coding** (false positives and
+duplicates Devin flagged), rejected fixes, rejected proposals, and failures. Being right is never penalized: the
+merge rate excludes no-change outcomes. Each task has a page with its sessions, PRs, verification, human feedback, and full
 timeline. JSON: `/api/status`, `/api/tasks`, `/api/metrics`, `/api/jobs`. Buttons run the sweep, the learn job, and a
 **Sync from GitHub** that imports labeled issues the bot never saw a webhook for. The page shows when it was last
 updated, refreshes itself every 15 seconds, and has a **Refresh now** link.
@@ -148,7 +156,7 @@ See `.env.example` (every variable is documented there). The important ones:
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 173 tests, standard library only
+python3 -m unittest discover -s tests -t .      # 187 tests, standard library only
 ```
 
 Outcome tests use response shapes observed against the real Devin API. The suite was mutation-checked: disabling

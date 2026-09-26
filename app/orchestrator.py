@@ -94,14 +94,14 @@ class Orchestrator:
             except sqlite3.IntegrityError:  # lost a race with a duplicate delivery
                 task = self.store.get_task_by_issue(repo, issue_number)
         state = State(task["state"])  # type: ignore[index]
-        if state in (State.PROPOSED, State.BLOCKED, State.FAILED, State.REJECTED):
+        if state in (State.PROPOSED, State.BLOCKED, State.FAILED, State.REJECTED, State.NOT_NEEDED):
             guidance = self._build_guidance(task) if state is not State.PROPOSED else ""  # type: ignore[arg-type]
             # Issue text may have been edited to answer a question: take the latest.
             self.store.update_task(
                 task["id"], title=title, body=body, current_session_id=None, guidance=guidance, verify_status=""  # type: ignore[index]
             )
             if self.store.transition(task["id"], State.READY, "human re-applied devin:ready", expected=state):  # type: ignore[index]
-                if state is State.REJECTED:
+                if state in (State.REJECTED, State.NOT_NEEDED):  # both leave the issue closed
                     try:
                         self.github.reopen_issue(repo, issue_number)
                     except GitHubAPIError as e:
@@ -400,21 +400,32 @@ class Orchestrator:
     def complete(self, task: dict[str, Any], why: str) -> bool:
         fresh = self.store.get_task(task["id"])
         state = State(fresh["state"])  # type: ignore[index]
-        if state in (State.COMPLETED, State.REJECTED, State.PROPOSED, State.READY):
+        if state in (State.COMPLETED, State.REJECTED, State.NOT_NEEDED, State.PROPOSED, State.READY):
             return False
         if state is State.IN_PROGRESS:
             self._stop_session(fresh)  # type: ignore[arg-type]
         return self.store.transition(task["id"], State.COMPLETED, why, expected=state)
 
+    def mark_not_needed(self, task: dict[str, Any], why: str) -> bool:
+        """Devin pushed back (blocked) and a human closed the issue: no fix was needed. This is a
+        success for triage, so it is neither a merged fix nor a rejection."""
+        return self.store.transition(task["id"], State.NOT_NEEDED, why, expected=State.BLOCKED)
+
     def handle_issue_closed(self, repo: str, number: int, reason: str | None) -> str:
+        """What a human closing an issue means depends on where the task was, NOT on which close
+        button they clicked (the default button says "completed", which is rarely what they mean)."""
         task = self.store.get_task_by_issue(repo, number)
         if task is None:
             return "ignored"
-        if reason == "not_planned":
-            return "rejected" if self.reject(task, "issue closed as not planned") else "ignored"
-        if reason == "completed":
-            return "completed" if self.complete(task, "issue closed as completed") else "ignored"
-        return "ignored"
+        state = State(task["state"])
+        if state in (State.COMPLETED, State.REJECTED, State.NOT_NEEDED):
+            return "ignored"
+        if state is State.BLOCKED:  # Devin had pushed back; closing accepts it, whatever the reason
+            why = f"closed by a human after Devin's pushback (close reason: {reason or 'unspecified'})"
+            return "not_needed" if self.mark_not_needed(task, why) else "ignored"
+        if state in (State.IN_PROGRESS, State.IN_REVIEW) and reason not in ("not_planned", "duplicate"):
+            return "ignored"  # only a merged PR completes a task; the PR event decides
+        return "rejected" if self.reject(task, f"issue closed ({reason or 'no reason given'})") else "ignored"
 
     def handle_comment(self, repo: str, number: int, author: str, text: str, on_pr: bool) -> str:
         task = self.store.find_task_by_pr(repo, number) if on_pr else self.store.get_task_by_issue(repo, number)

@@ -12,17 +12,15 @@ def deliver(orch, event, payload, delivery=None):
 
 
 class ClosedIssueTests(unittest.TestCase):
-    def test_closed_not_planned_rejects_from_any_open_state(self):
-        for prepare in ("ready", "in-progress", "blocked", "in-review"):
+    def test_closed_not_planned_rejects_an_unblocked_open_task(self):
+        for prepare in ("ready", "in-progress", "in-review"):
             orch, store, *_ = build()
             if prepare == "in-review":
                 to_review(orch, store, 1)
             else:
-                orch.request_ready(REPO, 1, "[sim:blocked] x" if prepare == "blocked" else "x", "")
+                orch.request_ready(REPO, 1, "x", "")
                 if prepare == "in-progress":
                     orch.dispatch_ready()
-                elif prepare == "blocked":
-                    run_ticks(orch)
             self.assertEqual(state_of(store, 1), prepare)
             r = deliver(orch, "issues", issue_event("closed", 1, reason="not_planned"))
             self.assertEqual(r["task"], "rejected", prepare)
@@ -41,10 +39,21 @@ class ClosedIssueTests(unittest.TestCase):
         deliver(orch, "issues", issue_event("closed", 4, reason="not_planned"))
         self.assertEqual(state_of(store, 4), "rejected")
 
-    def test_closed_as_completed_completes_a_reviewed_task(self):
+    def test_closing_a_reviewed_issue_as_completed_does_not_complete_it(self):
+        # Only a merged PR completes a task. The default close button says "completed", which must not
+        # count as a merged fix.
         orch, store, *_ = build()
         to_review(orch, store, 1)
-        deliver(orch, "issues", issue_event("closed", 1, reason="completed"))
+        self.assertEqual(deliver(orch, "issues", issue_event("closed", 1, reason="completed"))["task"], "ignored")
+        self.assertEqual(state_of(store, 1), "in-review")
+        deliver(orch, "pull_request", pr_event("closed", 101, merged=True))
+        self.assertEqual(state_of(store, 1), "completed")
+
+    def test_the_issue_closed_event_that_follows_a_merge_changes_nothing(self):
+        orch, store, *_ = build()
+        to_review(orch, store, 1)
+        deliver(orch, "pull_request", pr_event("closed", 101, merged=True))
+        self.assertEqual(deliver(orch, "issues", issue_event("closed", 1, reason="completed"))["task"], "ignored")
         self.assertEqual(state_of(store, 1), "completed")
 
     def test_unknown_issue_is_ignored(self):

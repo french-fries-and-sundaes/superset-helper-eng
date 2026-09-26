@@ -30,6 +30,7 @@ GLYPH = {
     State.FAILED: "✕",
     State.REJECTED: "⊘",
     State.COMPLETED: "✓",
+    State.NOT_NEEDED: "∅",
 }
 
 CSS = """
@@ -64,7 +65,7 @@ th{color:var(--ink2);font-weight:500;font-size:12px;text-transform:none}
 tr:last-child td{border-bottom:0}
 td.num,th.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .pill{white-space:nowrap}.pill i{font-style:normal;margin-right:6px}
-.st-completed i{color:var(--good)}.st-blocked i{color:var(--warning)}.st-failed i{color:var(--critical)}
+.st-completed i,.st-not-needed i{color:var(--good)}.st-blocked i{color:var(--warning)}.st-failed i{color:var(--critical)}
 .st-in-progress i{color:var(--accent)}.st-in-review i,.st-ready i,.st-proposed i,.st-rejected i{color:var(--muted)}
 .empty{color:var(--muted);padding:12px 0}
 .two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:12px}
@@ -111,7 +112,7 @@ def _links(task: dict[str, Any], orch: Orchestrator) -> str:
     out = [_safe_link(u, f"PR #{u.rstrip('/').split('/')[-1]}", ("https://github.com/",)) for u in task["pr_urls"]]
     sessions = orch.store.sessions_for_task(task["id"])
     if sessions:
-        out.append(_safe_link(sessions[-1]["url"], "Devin session", ("https://app.devin.ai/",)))
+        out.append(_safe_link(sessions[-1]["url"], "Session log", ("https://app.devin.ai/",)))
     return " · ".join(x for x in out if x)
 
 
@@ -185,7 +186,8 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
     hero = (
         f'<div class="card big"><div class="cap">Fixes merged ({e(label)})</div>'
         f'<div class="num">{m["completed_in_window"]}</div>'
-        f'<div class="cap small">{counts["completed"]} merged all time · {m["tasks_total"]} tasks tracked</div>'
+        f'<div class="cap small"><b>{m["not_needed_in_window"]}</b> caught before coding (no fix needed)</div>'
+        f'<div class="cap small muted">{counts["completed"]} merged and {counts["not-needed"]} not needed, all time · {m["tasks_total"]} tasks tracked</div>'
         f'<div class="small tabs" style="margin-top:8px">{tabs}</div></div>'
     )
 
@@ -220,6 +222,10 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
     if secs is not None:
         done = [t for t in done if now - t["updated_at"] <= secs]
     done_rows = [[_issue_link(t["repo"], t["issue_number"], t["title"]), _pill(t["state"]), _age(t["updated_at"], now), _links(t, orch)] for t in done]
+    caught = [t for t in tasks if t["state"] == State.NOT_NEEDED.value]
+    if secs is not None:
+        caught = [t for t in caught if now - t["updated_at"] <= secs]
+    caught_rows = [[_issue_link(t["repo"], t["issue_number"], t["title"]), _pill(t["state"]), _age(t["updated_at"], now), _links(t, orch)] for t in caught]
     rej = [t for t in tasks if t["state"] == State.REJECTED.value]
     rej_rows = [[_issue_link(t["repo"], t["issue_number"], t["title"]), _pill(t["state"]), _age(t["updated_at"], now)] for t in rej]
 
@@ -227,11 +233,14 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         return "n/a" if v is None else f"{v}%"
 
     ver = m["verification"]
+    pb, pr_ = m["pushbacks"], m["proposals"]
     metrics = (
         '<div class="card"><dl>'
-        f"<dt>Merge rate (merged / finished)</dt><dd>{pct(m['merge_rate_pct'])}</dd>"
+        f"<dt>Merge rate (merged fixes / attempted fixes)</dt><dd>{pct(m['merge_rate_pct'])}</dd>"
         f"<dt>First-pass rate (reached review on the first attempt)</dt><dd>{pct(m['first_pass_rate_pct'])}</dd>"
         f"<dt>Independent verification pass rate</dt><dd>{pct(ver['pass_rate_pct'])} ({ver['passed']} passed, {ver['failed']} failed)</dd>"
+        f"<dt>Pushbacks at triage</dt><dd>{pb['total']} ({pb['closed_not_needed']} closed as not needed, {pb['answered_and_continued']} answered and continued, {pb['waiting']} waiting)</dd>"
+        f"<dt>Scanner proposals approved</dt><dd>{pct(pr_['approval_rate_pct'])} ({pr_['approved']} approved, {pr_['rejected']} rejected, {pr_['pending']} pending)</dd>"
         f"<dt>Median Devin time to review-ready</dt><dd>{humanize(m['median_work_to_review'])}</dd>"
         f"<dt>Median wait before a session starts</dt><dd>{humanize(m['median_queue_wait'])}</dd>"
         f"<dt>Tasks that were ever blocked</dt><dd>{pct(m['blocked_rate_pct'])}</dd>"
@@ -296,6 +305,8 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         + _table([("Task", False), ("State", False), ("Attempt", True), ("Updated", True), ("Links", False)], flight_rows, "No tasks are queued or running.")
         + f"<h2>Completed ({e(label)})</h2>"
         + _table([("Task", False), ("State", False), ("When", True), ("Links", False)], done_rows, "No merged fixes in this window yet.")
+        + f"<h2>Caught before coding ({e(label)})</h2>"
+        + _table([("Task", False), ("State", False), ("When", True), ("Links", False)], caught_rows, "Nothing yet: these are issues Devin flagged as not needing a fix, which a human then closed.")
         + "<h2>Rejected</h2>"
         + _table([("Task", False), ("State", False), ("When", True)], rej_rows, "Nothing rejected.")
         + "<h2>Is it working?</h2>" + metrics

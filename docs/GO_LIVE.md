@@ -79,7 +79,7 @@ Check: the webhook's "Recent Deliveries" tab shows the ping with a green tick (H
 Approve the rest one at a time (`devin:ready`). What each should do:
 | Issue | Expected |
 |---|---|
-| Override underscore | **Blocked**: the problem is already fixed (PR #1); triage stops and asks |
+| Override underscore | **Blocked**: the problem is already fixed (PR #1); triage stops and asks. Close the issue: it counts as *caught before coding* |
 | Clear remaining npm advisories | In review with a package.json overrides change |
 | mypy errors in date_parser.py | In review with annotation-only changes |
 | check_pot_drift Babel | In review |

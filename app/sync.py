@@ -68,7 +68,7 @@ class Syncer:
 
     def _comment_for(self, task: dict[str, Any], state: State) -> str:
         url = self._session_url(task)
-        session_line = f"\n\nDevin session: {url}" if url else ""
+        session_line = f"\n\nSession log (read-only): {url}" if url else ""
         attempt = task["attempt"]
         if state is State.IN_PROGRESS:
             return (
@@ -81,8 +81,9 @@ class Syncer:
             return (
                 "Devin needs your input before it can continue.\n\n"
                 f"> {q}\n\n"
-                "To unblock: answer in a comment (or edit the issue), then re-apply the `devin:ready` label. "
-                f"A fresh Devin session will start with your answer.{session_line}"
+                "If Devin is right and nothing needs to change, just close the issue. Otherwise answer in a comment (or edit the "
+                "issue) and re-apply the `devin:ready` label: a fresh Devin session starts with your answer. "
+                f"This session has ended, so answer here on GitHub, not in the session.{session_line}"
             )
         if state is State.IN_REVIEW:
             prs = "\n".join(f"- {u}" for u in task["pr_urls"]) or "- (see the linked pull request)"

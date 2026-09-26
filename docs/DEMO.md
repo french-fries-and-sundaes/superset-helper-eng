@@ -27,7 +27,8 @@ demonstrable on screen. Record with the dashboard open; `PAUSE=3 bash scripts/de
    read from the issue through the API."
 4. **Human in the loop (25 s).** Task lands in *Out for review*. Request changes in a review comment; show the
    revision going to the same PR. Merge; task completes.
-5. **Pushback (20 s).** Show the *Needs a human* list: the underscore issue is blocked because it is already fixed
+5. **Pushback (20 s).** Show the *Needs a human* list (and, after you close the underscore issue, the *Caught before
+   coding* tile: "Devin was right, so it is not counted against it"): the underscore issue is blocked because it is already fixed
    (Devin declined to make a pointless change), paramiko is blocked because no fixed release exists, the coverage
    task is blocked as too broad. "Every request states exactly what it needs from a person."
 

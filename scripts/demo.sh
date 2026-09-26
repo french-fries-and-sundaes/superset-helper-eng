@@ -67,6 +67,12 @@ sim comment --issue 4 --body "Not worth it: this rule is disabled on purpose."
 sim close-issue --issue 4 --reason not_planned
 wait_for 4 rejected 20
 
+say "7b. Devin pushes back on a false positive; the human agrees and closes it (default 'completed' button). It is CAUGHT BEFORE CODING, not a merged fix and not a rejection"
+sim label --issue 6 --title "[sim:blocked] Override underscore (already fixed by an earlier PR)"
+wait_for 6 blocked
+sim close-issue --issue 6 --reason completed
+wait_for 6 not-needed 20
+
 say "8. Idempotency and security: duplicate delivery, and a bad signature"
 sim label --issue 5 --title "Duplicate test" --twice
 sim label --issue 5 --title x --bad-signature || true
