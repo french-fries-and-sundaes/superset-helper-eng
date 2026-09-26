@@ -42,7 +42,7 @@ class SignatureTests(unittest.TestCase):
 class AppTests(unittest.TestCase):
     def setUp(self):
         self.store = Store(":memory:")
-        settings = Settings(github_webhook_secret=SECRET, target_repo=REPO, run_worker=False, devin_mode="fake")
+        settings = Settings(github_webhook_secret=SECRET, target_repo=REPO, run_worker=False, devin_mode="fake", verify_mode="off")
         self.app = create_app(settings, devin=FakeDevinClient(REPO), store=self.store)
         self.client = TestClient(self.app)
 

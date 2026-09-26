@@ -23,6 +23,7 @@ class Interpretation:
     question: str = ""
     pr_urls: list[str] = field(default_factory=list)
     reason: str = ""
+    data: dict[str, Any] = field(default_factory=dict)  # the raw structured output
 
 
 def _pr_urls(session: dict[str, Any], so: dict[str, Any]) -> list[str]:
@@ -35,7 +36,9 @@ def _pr_urls(session: dict[str, Any], so: dict[str, Any]) -> list[str]:
     return urls
 
 
-def interpret(session: dict[str, Any]) -> Interpretation:
+def interpret(session: dict[str, Any], require_pr: bool = True) -> Interpretation:
+    """`require_pr=True` is for fix sessions (done without a PR is a failure).
+    Scan and learn sessions pass False: they can legitimately finish with no PR."""
     so = session.get("structured_output")
     so = so if isinstance(so, dict) else {}
     outcome = so.get("outcome") if so.get("outcome") in VALID_OUTCOMES else None
@@ -46,23 +49,23 @@ def interpret(session: dict[str, Any]) -> Interpretation:
     question = str(so.get("question") or "")
 
     def make(kind: str, reason: str = "") -> Interpretation:
-        if kind == "done" and not prs:
-            return Interpretation("failed", summary, "", [], "reported done but no pull request was found")
-        return Interpretation(kind, summary, question, prs, reason)
+        if kind == "done" and require_pr and not prs:
+            return Interpretation("failed", summary, "", [], "reported done but no pull request was found", so)
+        return Interpretation(kind, summary, question, prs, reason, so)
 
     if status == "error":
-        return Interpretation("failed", summary, "", prs, "Devin session ended with an error")
+        return Interpretation("failed", summary, "", prs, "Devin session ended with an error", so)
 
     if status in TERMINAL_STATUSES:  # exit or suspended (idle timeout)
         if outcome:
             return make(outcome)
-        if prs:
+        if prs and require_pr:
             return make("done", "session ended without an outcome, but a pull request exists")
-        return Interpretation("failed", summary, "", [], f"session ended ({status}) with no outcome and no PR")
+        return Interpretation("failed", summary, "", [], f"session ended ({status}) with no outcome and no PR", so)
 
     # new / claimed / running / resuming
     if detail == "waiting_for_user":
         if outcome:
             return make(outcome)
-        return Interpretation("blocked", summary, question, prs, "waiting_for_user with no explicit outcome")
-    return Interpretation("working")
+        return Interpretation("blocked", summary, question, prs, "waiting_for_user with no explicit outcome", so)
+    return Interpretation("working", data=so)

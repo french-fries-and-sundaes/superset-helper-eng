@@ -1,0 +1,43 @@
+# Independent verification of Devin's pull requests. Install this in the FORK (not in this repo).
+#
+# The bot's webhook must include the "Workflow runs" event. When this workflow finishes, GitHub
+# sends the result; the bot moves the task to devin:in-review (success) or devin:failed (failure).
+# The workflow name below MUST match VERIFY_WORKFLOW_NAME (default: devin-verify).
+name: devin-verify
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  verify:
+    # Only pull requests that say "Closes #N" (the ones Devin opens for a task).
+    if: contains(github.event.pull_request.body, 'Closes #') || contains(github.event.pull_request.body, 'closes #') || contains(github.event.pull_request.body, 'Fixes #')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # Superset needs Node 24 and npm 11 (npm 10 cannot read the lockfile) and Python 3.11.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm install -g npm@11
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The issue text is untrusted, so it is NEVER placed in this file or in a shell string:
+      # it is read from the API by the script, validated against an allowlist, then executed.
+      - name: Run the issue's verify command
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/devin_verify.py

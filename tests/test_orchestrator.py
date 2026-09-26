@@ -22,7 +22,7 @@ def build(max_per_day=20, devin=None):
     store = Store(":memory:")
     devin = devin or FakeDevinClient(REPO)
     clock = Clock()
-    settings = Settings(max_sessions_per_day=max_per_day, target_repo=REPO)
+    settings = Settings(max_sessions_per_day=max_per_day, target_repo=REPO, verify_mode="off")
     return Orchestrator(store, devin, settings, now=clock, knowledge="RULES"), store, devin, clock
 
 

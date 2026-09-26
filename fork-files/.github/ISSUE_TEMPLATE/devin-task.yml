@@ -1,0 +1,38 @@
+name: Devin task
+description: A problem for Devin to fix. A maintainer approves it by adding the devin:ready label.
+title: "[Task] "
+# devin:proposed is applied automatically. Only collaborators can add devin:ready (that label is the
+# approval, and the access control), so anyone can file a task but only a maintainer can send it to Devin.
+labels: ["devin:proposed"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What is wrong, where, and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: triage
+    attributes:
+      label: How to Triage / Test
+      description: How can someone confirm the problem exists? Devin runs the verify command on the unmodified code first, and stops to ask if it already passes.
+    validations:
+      required: true
+  - type: textarea
+    id: verify
+    attributes:
+      label: Verify command
+      description: >
+        One command per line; it must exit 0 only once the problem is fixed. Allowed programs: npm, npx, pip,
+        pip-audit, pytest, ruff, mypy, python -m, cd. Chain steps with && only. Example: cd superset-frontend && npm audit --audit-level=high
+      render: verify
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: [critical, high, medium, low]
+    validations:
+      required: false

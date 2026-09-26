@@ -1,45 +1,62 @@
-"""HTTP app: GitHub webhook receiver, a small JSON API, and the background worker.
+"""HTTP app: GitHub webhook receiver, HTML dashboard, JSON API, action buttons, and the worker.
 
 Run:  uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000
-(The M4 milestone adds the HTML dashboard on top of /api/status and /api/tasks.)
+
+Security: /webhook/github is authenticated by its HMAC signature. Everything else (dashboard,
+JSON, and the buttons that start Devin sessions) requires HTTP Basic auth when DASHBOARD_PASSWORD
+is set. Set it whenever you expose the port through a tunnel.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
+import hmac
 import json
 import logging
-from typing import Any
+from typing import Any, Awaitable, Callable
+from urllib.parse import quote, urlparse
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from .config import Settings
+from .dashboard import metrics_json, render_dashboard, render_task
 from .db import Store
 from .devin_client import make_client
+from .github_client import LABEL_COLORS, make_github
 from .orchestrator import Orchestrator
 from .states import HUMAN_NEEDED, State
 from .webhook import handle_event, verify_signature
 
 log = logging.getLogger("app")
 
+Handler = Callable[[Request], Awaitable[Response]]
 
-def create_app(settings: Settings | None = None, devin: Any = None, store: Store | None = None) -> Starlette:
+
+def create_app(
+    settings: Settings | None = None, devin: Any = None, store: Store | None = None, github: Any = None
+) -> Starlette:
     settings = settings or Settings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = store or Store(settings.db_path)
     devin = devin or make_client(settings)
-    orch = Orchestrator(store, devin, settings)
+    github = github or make_github(settings.github_token, settings.github_api_base)
+    orch = Orchestrator(store, devin, settings, github=github)
 
-    async def index(request: Request) -> PlainTextResponse:
-        return PlainTextResponse(
-            "superset-helper-eng is running.\n"
-            f"target repo: {settings.target_repo}  mode: {settings.devin_mode}\n"
-            "GET /api/status   GET /api/tasks   POST /webhook/github   GET /healthz\n"
-        )
+    def protected(fn: Handler) -> Handler:
+        async def wrapper(request: Request) -> Response:
+            if settings.dashboard_password and not _authorized(request, settings.dashboard_password):
+                return PlainTextResponse(
+                    "Authentication required", status_code=401, headers={"WWW-Authenticate": 'Basic realm="superset-helper-eng"'}
+                )
+            return await fn(request)
 
+        return wrapper
+
+    # ---- public ------------------------------------------------------------------
     async def healthz(request: Request) -> JSONResponse:
         return JSONResponse({"ok": True})
 
@@ -64,12 +81,21 @@ def create_app(settings: Settings | None = None, devin: Any = None, store: Store
         log.info("webhook %s -> %s", request.headers.get("x-github-event"), result)
         return JSONResponse(result)
 
+    # ---- protected ---------------------------------------------------------------
+    async def index(request: Request) -> HTMLResponse:
+        page = await asyncio.to_thread(
+            render_dashboard, orch, request.query_params.get("window", "7d"), request.query_params.get("msg", "")
+        )
+        return HTMLResponse(page)
+
+    async def task_page(request: Request) -> Response:
+        page = await asyncio.to_thread(render_task, orch, int(request.path_params["issue"]))
+        return HTMLResponse(page) if page else PlainTextResponse("No such task", status_code=404)
+
     async def api_status(request: Request) -> JSONResponse:
         summary = await asyncio.to_thread(orch.status_summary)
         tasks = await asyncio.to_thread(store.list_tasks)
-        summary["needs_human"] = [
-            _brief(t) for t in tasks if State(t["state"]) in HUMAN_NEEDED
-        ]
+        summary["needs_human"] = [_brief(t) for t in tasks if State(t["state"]) in HUMAN_NEEDED]
         return JSONResponse(summary)
 
     async def api_tasks(request: Request) -> JSONResponse:
@@ -80,30 +106,88 @@ def create_app(settings: Settings | None = None, devin: Any = None, store: Store
             return JSONResponse({"error": f"unknown state {state!r}"}, status_code=400)
         return JSONResponse({"tasks": [_brief(t) for t in tasks]})
 
+    async def api_metrics(request: Request) -> JSONResponse:
+        return JSONResponse(await asyncio.to_thread(metrics_json, orch, request.query_params.get("window", "all")))
+
+    async def api_jobs(request: Request) -> JSONResponse:
+        jobs = await asyncio.to_thread(store.list_jobs, request.query_params.get("kind"), 20)
+        return JSONResponse({"jobs": [{k: v for k, v in j.items() if k != "result_json"} for j in jobs]})
+
+    def _same_origin(request: Request) -> bool:
+        origin = request.headers.get("origin")
+        return not origin or urlparse(origin).netloc == request.headers.get("host")
+
+    def _job_action(kind: str) -> Handler:
+        async def run(request: Request) -> Response:
+            if not _same_origin(request):
+                return PlainTextResponse("cross-origin request refused", status_code=403)
+            fn = orch.start_scan if kind == "scan" else orch.start_learn
+            result = await asyncio.to_thread(fn)
+            if request.url.path.startswith("/api/"):
+                return JSONResponse(result)
+            return RedirectResponse(f"/?msg={quote(_flash(kind, result))}", status_code=303)
+
+        return run
+
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
-        worker = asyncio.create_task(_worker_loop(orch, settings.poll_interval_seconds)) if settings.run_worker else None
+        tasks = []
+        if settings.run_worker:
+            tasks.append(asyncio.create_task(_worker_loop(orch, settings.poll_interval_seconds)))
+        if not github.dry_run:
+            tasks.append(asyncio.create_task(asyncio.to_thread(_ensure_labels, github, settings.target_repo)))
         try:
             yield
         finally:
-            if worker:
-                worker.cancel()
+            for t in tasks:
+                t.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
-                    await worker
+                    await t
 
     app = Starlette(
         routes=[
-            Route("/", index),
             Route("/healthz", healthz),
             Route("/webhook/github", webhook, methods=["POST"]),
-            Route("/api/status", api_status),
-            Route("/api/tasks", api_tasks),
+            Route("/", protected(index)),
+            Route("/tasks/{issue:int}", protected(task_page)),
+            Route("/api/status", protected(api_status)),
+            Route("/api/tasks", protected(api_tasks)),
+            Route("/api/metrics", protected(api_metrics)),
+            Route("/api/jobs", protected(api_jobs)),
+            Route("/actions/scan", protected(_job_action("scan")), methods=["POST"]),
+            Route("/actions/learn", protected(_job_action("learn")), methods=["POST"]),
+            Route("/api/scan", protected(_job_action("scan")), methods=["POST"]),
+            Route("/api/learn", protected(_job_action("learn")), methods=["POST"]),
         ],
         lifespan=lifespan,
     )
     app.state.orchestrator = orch
     app.state.store = store
     return app
+
+
+def _authorized(request: Request, password: str) -> bool:
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("basic "):
+        return False
+    try:
+        supplied = base64.b64decode(header[6:]).decode().partition(":")[2]
+    except Exception:
+        return False
+    return hmac.compare_digest(supplied, password)
+
+
+def _flash(kind: str, result: dict[str, Any]) -> str:
+    status = result.get("status")
+    if status == "started":
+        return f"{kind} started (session {result.get('url', '')}). Results appear here when Devin finishes."
+    if status == "already_running":
+        return f"A {kind} is already running."
+    if status == "limit_reached":
+        return f"Daily session limit ({result.get('limit')}) reached; try again later."
+    if status == "nothing_new":
+        return "Nothing new to learn from since the last run."
+    return f"{kind} could not start: {result.get('detail', status)}"
 
 
 def _brief(t: dict[str, Any]) -> dict[str, Any]:
@@ -114,9 +198,19 @@ def _brief(t: dict[str, Any]) -> dict[str, Any]:
         "attempt": t["attempt"],
         "session": t["current_session_id"],
         "pr_urls": t["pr_urls"],
+        "verify_status": t["verify_status"] or None,
         "question": t["blocked_question"] or None,
         "summary": t["last_summary"] or None,
     }
+
+
+def _ensure_labels(github: Any, repo: str) -> None:
+    for name, (color, desc) in LABEL_COLORS.items():
+        try:
+            github.ensure_label(repo, name, color, desc)
+        except Exception as e:  # best effort: never block startup
+            log.warning("could not ensure label %s: %s", name, e)
+            return
 
 
 async def _worker_loop(orch: Orchestrator, interval: int) -> None:

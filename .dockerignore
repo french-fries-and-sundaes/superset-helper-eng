@@ -1,0 +1,10 @@
+.env
+.git
+.venv
+data
+**/__pycache__
+*.pyc
+tests
+seed
+fork-files
+docs
