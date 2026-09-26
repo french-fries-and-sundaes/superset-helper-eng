@@ -296,7 +296,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
 
     body = (
         f"<h1>superset-helper-eng</h1>"
-        f'<div class="sub">Devin fixes issues in <a href="https://github.com/{e(s.target_repo)}">{e(s.target_repo)}</a>; humans review and merge.</div>'
+        f'<div class="sub">Devin finds and fixes issues in <a href="https://github.com/{e(s.target_repo)}">{e(s.target_repo)}</a>; humans review and merge.</div>'
         f'<div class="chips">{chips}</div>{refresh}{flash}'
         f'<div class="hero">{hero}<div class="tiles">{tiles}</div></div>'
         "<h2>Needs a human</h2>"
