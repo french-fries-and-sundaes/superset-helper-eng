@@ -55,6 +55,9 @@ class Settings:
     max_acu_per_session: int | None = None  # optional Devin-side cap per session
     scan_max_findings: int = 7  # per sweep, so a scan cannot flood the backlog
 
+    # Safety: allow running against a database created in a different mode (see app/guards.py).
+    allow_mode_change: bool = False
+
     # Dashboard
     dashboard_password: str = ""  # if set, everything except /webhook/github and /healthz needs it
 
@@ -89,6 +92,7 @@ class Settings:
             max_sessions_per_day=_int(env, "MAX_SESSIONS_PER_DAY", 20),
             max_acu_per_session=_opt_int(env, "MAX_ACU_PER_SESSION"),
             scan_max_findings=_int(env, "SCAN_MAX_FINDINGS", 7),
+            allow_mode_change=_bool(env, "ALLOW_MODE_CHANGE", False),
             dashboard_password=env.get("DASHBOARD_PASSWORD", "").strip(),
             db_path=env.get("DB_PATH", cls.db_path).strip(),
             poll_interval_seconds=_int(env, "POLL_INTERVAL_SECONDS", 15),

@@ -51,7 +51,14 @@ class Syncer:
             return True
         except GitHubAPIError as e:
             log.warning("GitHub sync failed for #%s: %s", number, e)
-            self.store.add_event(task["id"], "github_sync_failed", str(e))
+            if e.status == 410:  # "This issue was deleted": retrying can never succeed
+                if self.store.claim_sync_key(task["id"], f"gone:{state.value}"):
+                    self.store.add_event(task["id"], "github_issue_missing", f"#{number}: {e}. Not retrying.")
+                self.store.update_task(task["id"], synced_state=state.value)
+                return False
+            # anything else may be temporary (outage, permissions): retry next tick, but log it once
+            if self.store.claim_sync_key(task["id"], f"syncfail:{state.value}:{e.status}"):
+                self.store.add_event(task["id"], "github_sync_failed", str(e))
             return False
 
     # ---- comment bodies --------------------------------------------------------

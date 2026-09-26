@@ -22,21 +22,7 @@ log = logging.getLogger(__name__)
 # as the human who owns it, so the marker is how we recognise (and ignore) our own comments.
 BOT_MARKER = "<!-- superset-helper-eng:bot -->"
 
-LABEL_COLORS = {
-    "devin:proposed": ("d4c5f9", "Scanner filed it; awaiting a human to approve"),
-    "devin:ready": ("0e8a16", "Approved: Devin will work on this"),
-    "devin:in-progress": ("1d76db", "A Devin session is working on this"),
-    "devin:blocked": ("d93f0b", "Devin needs a human answer"),
-    "devin:in-review": ("fbca04", "Pull request open and verified; awaiting review"),
-    "devin:failed": ("b60205", "Devin could not complete this"),
-    "devin:rejected": ("6a737d", "A human decided not to do this"),
-    "devin:knowledge-base-improvement": ("c2e0c6", "Proposed rule changes for knowledge/"),
-    "type:dependency": ("ededed", ""),
-    "type:lint": ("ededed", ""),
-    "type:tests": ("ededed", ""),
-    "type:bug": ("ededed", ""),
-    "type:other": ("ededed", ""),
-}
+from .labels import LABEL_COLORS  # noqa: E402,F401  (re-exported)
 
 
 class GitHubAPIError(Exception):
@@ -94,6 +80,18 @@ class GitHubClient:
 
     def get_issue(self, repo: str, number: int) -> dict[str, Any]:
         return self._req("GET", f"repos/{repo}/issues/{number}")
+
+    def list_issues(self, repo: str, label: str, state: str = "open") -> list[dict[str, Any]]:
+        """Open issues carrying `label` (pull requests are excluded; GitHub lists them as issues too)."""
+        items: list[dict[str, Any]] = []
+        for page in range(1, 6):  # up to 500 issues
+            data = self._req(
+                "GET", f"repos/{repo}/issues", params={"labels": label, "state": state, "per_page": 100, "page": page}
+            ) or []
+            items.extend(i for i in data if "pull_request" not in i)
+            if len(data) < 100:
+                break
+        return items
 
     def comment(self, repo: str, number: int, body: str) -> dict[str, Any]:
         return self._req("POST", f"repos/{repo}/issues/{number}/comments", json={"body": body + "\n\n" + BOT_MARKER})
@@ -183,6 +181,9 @@ class RecordingGitHub:
 
     def get_issue(self, repo: str, number: int) -> dict[str, Any]:
         return {"number": number, "state": "open"}
+
+    def list_issues(self, repo: str, label: str, state: str = "open") -> list[dict[str, Any]]:
+        return []  # dry run: there is no real GitHub to read from
 
     def comment(self, repo: str, number: int, body: str) -> dict[str, Any]:
         self._rec("comment", repo=repo, number=number, body=body)

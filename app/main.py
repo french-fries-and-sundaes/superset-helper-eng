@@ -27,6 +27,7 @@ from .dashboard import metrics_json, render_dashboard, render_task
 from .db import Store
 from .devin_client import make_client
 from .github_client import LABEL_COLORS, make_github
+from .guards import check_safety
 from .orchestrator import Orchestrator
 from .states import HUMAN_NEEDED, State
 from .webhook import handle_event, verify_signature
@@ -42,6 +43,7 @@ def create_app(
     settings = settings or Settings.from_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = store or Store(settings.db_path)
+    check_safety(store, settings)
     devin = devin or make_client(settings)
     github = github or make_github(settings.github_token, settings.github_api_base)
     orch = Orchestrator(store, devin, settings, github=github)
@@ -121,7 +123,7 @@ def create_app(
         async def run(request: Request) -> Response:
             if not _same_origin(request):
                 return PlainTextResponse("cross-origin request refused", status_code=403)
-            fn = orch.start_scan if kind == "scan" else orch.start_learn
+            fn = {"scan": orch.start_scan, "learn": orch.start_learn, "sync": orch.import_from_github}[kind]
             result = await asyncio.to_thread(fn)
             if request.url.path.startswith("/api/"):
                 return JSONResponse(result)
@@ -135,7 +137,7 @@ def create_app(
         if settings.run_worker:
             tasks.append(asyncio.create_task(_worker_loop(orch, settings.poll_interval_seconds)))
         if not github.dry_run:
-            tasks.append(asyncio.create_task(asyncio.to_thread(_ensure_labels, github, settings.target_repo)))
+            tasks.append(asyncio.create_task(asyncio.to_thread(_startup, github, orch, settings.target_repo)))
         try:
             yield
         finally:
@@ -156,8 +158,10 @@ def create_app(
             Route("/api/jobs", protected(api_jobs)),
             Route("/actions/scan", protected(_job_action("scan")), methods=["POST"]),
             Route("/actions/learn", protected(_job_action("learn")), methods=["POST"]),
+            Route("/actions/sync", protected(_job_action("sync")), methods=["POST"]),
             Route("/api/scan", protected(_job_action("scan")), methods=["POST"]),
             Route("/api/learn", protected(_job_action("learn")), methods=["POST"]),
+            Route("/api/sync", protected(_job_action("sync")), methods=["POST"]),
         ],
         lifespan=lifespan,
     )
@@ -179,6 +183,15 @@ def _authorized(request: Request, password: str) -> bool:
 
 def _flash(kind: str, result: dict[str, Any]) -> str:
     status = result.get("status")
+    if kind == "sync":
+        if status == "dry_run":
+            return "GitHub sync is in dry-run mode (no GITHUB_TOKEN), so there is nothing to import."
+        if status == "error":
+            return f"Could not read issues from GitHub: {'; '.join(result.get('errors', []))}"
+        return (
+            f"Imported {result.get('proposed', 0)} proposed and {result.get('ready', 0)} ready issue(s) "
+            f"({result.get('seen', 0)} labeled issue(s) checked)."
+        )
     if status == "started":
         return f"{kind} started (session {result.get('url', '')}). Results appear here when Devin finishes."
     if status == "already_running":
@@ -202,6 +215,16 @@ def _brief(t: dict[str, Any]) -> dict[str, Any]:
         "question": t["blocked_question"] or None,
         "summary": t["last_summary"] or None,
     }
+
+
+def _startup(github: Any, orch: Orchestrator, repo: str) -> None:
+    """Once, at startup with a real token: make sure the labels exist, then pick up any labeled
+    issues the bot missed while it was down."""
+    _ensure_labels(github, repo)
+    try:
+        log.info("startup import from GitHub: %s", orch.import_from_github())
+    except Exception:
+        log.exception("startup import failed")
 
 
 def _ensure_labels(github: Any, repo: str) -> None:

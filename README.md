@@ -68,6 +68,10 @@ Human actions are ordinary GitHub actions: labels, comments, PR reviews, merge, 
 - **Spend guards, layered.** `MAX_SESSIONS_PER_DAY` (rolling 24h, includes scan/learn), optional
   `MAX_ACU_PER_SESSION`, and Devin's own *Message usage limit* setting. The API's `acus_consumed` did not
   report usage in our org, so the bot does not rely on it.
+- **Simulated and real data never mix.** The database records the mode it was created in. The bot refuses to start
+  (`SAFETY CHECK`) if you reuse a simulated database in real mode, or combine `DEVIN_MODE=fake` with a real
+  `GITHUB_TOKEN`: either would write demo tasks to the real repository, or make a real approval collide with a
+  simulated task number. To start fresh: `docker compose down && rm -rf data`.
 - **`devin:ready` is also the access control.** Only collaborators can apply labels, so strangers can file
   issues but only a trusted person can send one to Devin. Issue text going to an agent is untrusted input.
 - **Rules as code.** `knowledge/*.md` is injected into every prompt. The `learn` job proposes changes as a PR, so
@@ -125,7 +129,9 @@ pipeline (backlog, working, verifying, out for review), a **needs-a-human list t
 needs from you** and how long it has waited, the daily session meter, and outcome metrics: merge rate, first-pass
 rate, independent verification pass rate, median Devin time to review-ready, blocked and failed rates, review
 rounds, sessions per task. Each task has a page with its sessions, PRs, verification, human feedback, and full
-timeline. JSON: `/api/status`, `/api/tasks`, `/api/metrics`, `/api/jobs`. Buttons run the sweep and the learn job.
+timeline. JSON: `/api/status`, `/api/tasks`, `/api/metrics`, `/api/jobs`. Buttons run the sweep, the learn job, and a
+**Sync from GitHub** that imports labeled issues the bot never saw a webhook for. The page shows when it was last
+updated, refreshes itself every 15 seconds, and has a **Refresh now** link.
 
 ## Configuration
 
@@ -142,7 +148,7 @@ See `.env.example` (every variable is documented there). The important ones:
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 156 tests, standard library only
+python3 -m unittest discover -s tests -t .      # 173 tests, standard library only
 ```
 
 Outcome tests use response shapes observed against the real Devin API. The suite was mutation-checked: disabling

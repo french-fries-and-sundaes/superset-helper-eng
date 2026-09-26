@@ -9,4 +9,4 @@ services:
       - ./data:/app/data
       # Edit knowledge/*.md without rebuilding; the bot reads it when it starts a session.
       - ./knowledge:/app/knowledge:ro
-    restart: unless-stopped
+    restart: on-failure:3

@@ -100,6 +100,10 @@ CREATE TABLE IF NOT EXISTS sync_log (
     ts INTEGER NOT NULL,
     PRIMARY KEY (task_id, key)
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
     delivery_id TEXT PRIMARY KEY,
     ts INTEGER NOT NULL
@@ -248,6 +252,19 @@ class Store:
             )
             self._event(task_id, "state_changed", f"{current.value} -> {new.value}: {note}".strip(), ts)
         return True
+
+    def count_tasks(self) -> int:
+        with self._lock:
+            return int(self._conn.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()["n"])
+
+    def get_meta(self, key: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._lock:
+            self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)", (key, value))
 
     def counts_by_state(self) -> dict[str, int]:
         with self._lock:

@@ -4,6 +4,7 @@
   python3 -m app.cli enqueue --issue 3 --title "Override underscore" --body "..." [--proposed]
   python3 -m app.cli scan            # start a sweep now (same as the dashboard button)
   python3 -m app.cli learn           # turn feedback since the last run into a knowledge PR
+  python3 -m app.cli sync            # import devin:proposed / devin:ready issues the bot has not seen
   python3 -m app.cli tick            # one worker pass (poll sessions, then dispatch)
   python3 -m app.cli worker          # run the worker loop in the foreground
 """
@@ -19,12 +20,15 @@ from .config import Settings
 from .db import Store
 from .devin_client import make_client
 from .github_client import make_github
+from .guards import check_safety
 from .orchestrator import Orchestrator
 
 
 def build(settings: Settings) -> Orchestrator:
+    store = Store(settings.db_path)
+    check_safety(store, settings)
     return Orchestrator(
-        Store(settings.db_path),
+        store,
         make_client(settings),
         settings,
         github=make_github(settings.github_token, settings.github_api_base),
@@ -42,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--proposed", action="store_true", help="file as devin:proposed instead of ready")
     sub.add_parser("scan", help="start a sweep for problems now")
     sub.add_parser("learn", help="start the feedback -> knowledge PR job now")
+    sub.add_parser("sync", help="import labeled issues the bot has not seen yet")
     sub.add_parser("tick", help="run one worker pass")
     sub.add_parser("worker", help="run the worker loop until interrupted")
     args = p.parse_args(argv)
@@ -64,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(orch.start_scan(), indent=2))
     elif args.cmd == "learn":
         print(json.dumps(orch.start_learn(), indent=2))
+    elif args.cmd == "sync":
+        print(json.dumps(orch.import_from_github(), indent=2))
     elif args.cmd == "tick":
         orch.tick()
         print(json.dumps(orch.status_summary(), indent=2))

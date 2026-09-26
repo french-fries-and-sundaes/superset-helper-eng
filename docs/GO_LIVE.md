@@ -44,11 +44,21 @@ Optional but recommended: fork Settings, Branches, add a rule on the default bra
 review, so "humans must merge" is enforced by GitHub and not only by convention.
 
 ## 5. Start the service
+**If you ran the fake-mode demo earlier, start with an empty database.** Simulated tasks are numbered #1, #2, ...
+and would collide with your real issue numbers. The bot now refuses to start in that situation (`SAFETY CHECK`),
+but the fix is the same:
 ```bash
+docker compose down
+rm -rf data            # deletes only the local database (test data so far)
 docker compose up --build
 ```
 Open http://localhost:8000 (username anything, password = `DASHBOARD_PASSWORD`). The chips at the top should read
 `Devin: real`, `GitHub sync: live`, `Verification: actions`.
+
+The seeded issues were created before the webhook existed, so the bot has not seen them yet. Click **Sync now**
+(under Actions) or run `python3 -m app.cli sync`: it imports every open issue labeled `devin:proposed` or
+`devin:ready` and shows them on the dashboard. It also runs once at startup, so it doubles as a catch-up after
+any downtime. The page refreshes itself every 15 seconds; **Refresh now** (top) reloads immediately.
 
 ## 6. Webhook
 GitHub cannot reach localhost, so start a tunnel (`ngrok http 8000`, Cloudflare Tunnel, or smee.io) and use its
@@ -93,3 +103,6 @@ usage" on Devin's Usage & limits page; after, note it again and divide the diffe
 | Verification fails immediately | The verify command uses a program outside the allowlist (see the workflow log) |
 | A session never appears | Check the container log for `session_start_failed`; a 403 means the service user lacks permission |
 | Labels missing | Run `python3 scripts/seed_fork.py --labels-only` |
+| Container exits with `SAFETY CHECK` | The database was created in a different mode (fake vs real), or `DEVIN_MODE=fake` is combined with a `GITHUB_TOKEN`. Follow the message: `docker compose down && rm -rf data` |
+| Dashboard rows for issues that do not exist on GitHub | Leftover simulated tasks. Start fresh (step 5). A 410 "This issue was deleted" is logged once per task and not retried |
+| Seeded issues missing from the dashboard | Click **Sync now** (they were created before the webhook existed) |

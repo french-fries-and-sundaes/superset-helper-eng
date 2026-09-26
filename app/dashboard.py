@@ -173,6 +173,11 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         )
     )
     flash = f'<div class="flash">{e(msg)}</div>' if msg else ""
+    stamp = time.strftime("%H:%M:%S", time.gmtime(now))
+    refresh = (
+        f'<div class="muted small" style="margin-top:6px">Updated {stamp} UTC · refreshes itself every 15 seconds · '
+        f'<a href="/?window={e(window)}">Refresh now</a></div>'
+    )
     tabs = " ".join(
         f'<a href="/?window={k}" class="{"on" if k == window else ""}">{v[0]}</a>' for k, v in WINDOWS.items()
     )
@@ -265,6 +270,11 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         "scan", "Sweep for problems", "A Devin session runs audits and linters and files findings as devin:proposed issues for approval.", "/actions/scan"
     ) + job_card(
         "learn", "Learn from feedback", "Turns human feedback since the last run into one batched PR against knowledge/.", "/actions/learn"
+    ) + (
+        '<div class="card"><b>Sync from GitHub</b>'
+        '<div class="muted small">Imports open issues labeled devin:proposed or devin:ready that the bot has not seen '
+        '(for example, created before the webhook existed). Also runs once at startup.</div>'
+        '<form method="post" action="/actions/sync" style="margin-top:10px"><button type="submit">Sync now</button></form></div>'
     ) + "</div>"
 
     events = store.list_events(limit=12)
@@ -278,7 +288,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
     body = (
         f"<h1>superset-helper-eng</h1>"
         f'<div class="sub">Devin fixes issues in <a href="https://github.com/{e(s.target_repo)}">{e(s.target_repo)}</a>; humans review and merge.</div>'
-        f'<div class="chips">{chips}</div>{flash}'
+        f'<div class="chips">{chips}</div>{refresh}{flash}'
         f'<div class="hero">{hero}<div class="tiles">{tiles}</div></div>'
         "<h2>Needs a human</h2>"
         + _table([("Task", False), ("State", False), ("What we need from you", False), ("Waiting", True), ("Links", False)], need_rows, "Nothing is waiting on a person.")

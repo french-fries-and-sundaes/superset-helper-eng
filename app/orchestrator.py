@@ -139,6 +139,34 @@ class Orchestrator:
             parts.append("Human comments since then:\n" + "\n".join(comments))
         return "\n".join(parts)[:4000]
 
+    def import_from_github(self) -> dict[str, Any]:
+        """Catch up on issues the bot never saw a webhook for (created before the webhook existed,
+        or labeled while the bot was down). Reads open issues labeled devin:proposed / devin:ready
+        and registers them exactly as the webhook would. Safe to run repeatedly."""
+        repo = self.settings.target_repo
+        out: dict[str, Any] = {"status": "ok", "proposed": 0, "ready": 0, "seen": 0, "errors": []}
+        if getattr(self.github, "dry_run", False):
+            out["status"] = "dry_run"
+            return out
+        for label, kind in ((self.settings.proposed_label, "proposed"), (self.settings.ready_label, "ready")):
+            try:
+                issues = self.github.list_issues(repo, label)
+            except GitHubAPIError as e:
+                out["errors"].append(f"{label}: {e}")
+                continue
+            for issue in issues:
+                out["seen"] += 1
+                number, title, body = issue["number"], issue.get("title") or "", issue.get("body") or ""
+                if kind == "proposed":
+                    if self.register_proposed(repo, number, title, body, source="import") == "created":
+                        out["proposed"] += 1
+                elif self.request_ready(repo, number, title, body, source="import") in ("created", "requeued"):
+                    out["ready"] += 1
+        if out["errors"] and not (out["proposed"] or out["ready"]):
+            out["status"] = "error"
+        self.sync()
+        return out
+
     # ============================================================================
     # worker
     # ============================================================================
