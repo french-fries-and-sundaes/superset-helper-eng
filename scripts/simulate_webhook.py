@@ -3,10 +3,10 @@
 
 No GitHub, no tunnel needed. Uses only the standard library.
 
-    python scripts/simulate_webhook.py --issue 1 --title "Override underscore"
-    python scripts/simulate_webhook.py --issue 2 --title "[sim:blocked] Paramiko SHA-1"
-    python scripts/simulate_webhook.py --issue 3 --title "[sim:fail] Too broad" --twice   # tests idempotency
-    python scripts/simulate_webhook.py --issue 4 --title "Scanner finding" --label devin:proposed
+    python3 scripts/simulate_webhook.py --issue 1 --title "Override underscore"
+    python3 scripts/simulate_webhook.py --issue 2 --title "[sim:blocked] Paramiko SHA-1"
+    python3 scripts/simulate_webhook.py --issue 3 --title "[sim:fail] Too broad" --twice   # tests idempotency
+    python3 scripts/simulate_webhook.py --issue 4 --title "Scanner finding" --label devin:proposed
 
 The secret is read from GITHUB_WEBHOOK_SECRET (same value the service uses).
 """

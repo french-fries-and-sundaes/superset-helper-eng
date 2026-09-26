@@ -5,8 +5,8 @@ Creates ONE session for a prompt, polls it, prints every status change, and (onc
 reports an outcome) sends the wrap-up message so the session exits.
 
     export DEVIN_API_KEY=cog_...  DEVIN_ORG_ID=org-...
-    python scripts/m0_run_session.py --title "probe" --prompt "Do not change code. Ask me red or blue."
-    python scripts/m0_run_session.py --issue-file issue1.md --title "#1 underscore override"
+    python3 scripts/m0_run_session.py --title "probe" --prompt "Do not change code. Ask me red or blue."
+    python3 scripts/m0_run_session.py --issue-file issue1.md --title "#1 underscore override"
 
 Tip: cap spend while experimenting with --max-acu 2.
 """
@@ -36,6 +36,8 @@ def main() -> int:
     ap.add_argument("--max-acu", type=int, default=None)
     ap.add_argument("--interval", type=int, default=15)
     ap.add_argument("--timeout", type=int, default=1800, help="stop polling after this many seconds")
+    ap.add_argument("--keep-open", action="store_true",
+                    help="do not terminate the session when it is blocked or failed (default: terminate)")
     args = ap.parse_args()
 
     s = Settings.from_env(os.environ)
@@ -68,6 +70,9 @@ def main() -> int:
                 wrapped = True
             else:
                 print("Session needs a human or failed; stopping here.")
+                if not args.keep_open:
+                    client.terminate(sid)
+                    print("Terminated the session so it does not sit idle (use --keep-open to answer it yourself).")
                 return 0
         if snap.get("status") in TERMINAL_STATUSES:
             print("final:", json.dumps({k: snap.get(k) for k in ("status", "status_detail", "pull_requests")}))

@@ -1,9 +1,9 @@
 """Command line helpers.
 
-  python -m app.cli status
-  python -m app.cli enqueue --issue 3 --title "Override underscore" --body "..." [--proposed]
-  python -m app.cli tick        # one worker pass (poll sessions, then dispatch)
-  python -m app.cli worker      # run the worker loop in the foreground
+  python3 -m app.cli status
+  python3 -m app.cli enqueue --issue 3 --title "Override underscore" --body "..." [--proposed]
+  python3 -m app.cli tick        # one worker pass (poll sessions, then dispatch)
+  python3 -m app.cli worker      # run the worker loop in the foreground
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def build(settings: Settings) -> Orchestrator:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="python -m app.cli")
+    p = argparse.ArgumentParser(prog="python3 -m app.cli")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status", help="show counts and tasks that need a human")
     e = sub.add_parser("enqueue", help="add a task without GitHub (same as applying the label)")

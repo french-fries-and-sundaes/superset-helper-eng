@@ -62,23 +62,23 @@ In a second terminal, simulate GitHub events (signed exactly like GitHub signs t
 ```bash
 export GITHUB_WEBHOOK_SECRET=change-me      # same value as in .env
 
-python scripts/simulate_webhook.py --issue 1 --title "Override underscore"            # -> in-review
-python scripts/simulate_webhook.py --issue 2 --title "[sim:blocked] Paramiko SHA-1"   # -> blocked (asks a question)
-python scripts/simulate_webhook.py --issue 3 --title "[sim:fail] Coverage raise"      # -> failed
-python scripts/simulate_webhook.py --issue 4 --title "Scanner finding" --label devin:proposed   # -> proposed
-python scripts/simulate_webhook.py --issue 1 --title "Override underscore" --twice    # idempotency: 2nd is a duplicate
-python scripts/simulate_webhook.py --issue 1 --title x --bad-signature                # 401
+python3 scripts/simulate_webhook.py --issue 1 --title "Override underscore"            # -> in-review
+python3 scripts/simulate_webhook.py --issue 2 --title "[sim:blocked] Paramiko SHA-1"   # -> blocked (asks a question)
+python3 scripts/simulate_webhook.py --issue 3 --title "[sim:fail] Coverage raise"      # -> failed
+python3 scripts/simulate_webhook.py --issue 4 --title "Scanner finding" --label devin:proposed   # -> proposed
+python3 scripts/simulate_webhook.py --issue 1 --title "Override underscore" --twice    # idempotency: 2nd is a duplicate
+python3 scripts/simulate_webhook.py --issue 1 --title x --bad-signature                # 401
 
-curl -s localhost:8000/api/status | python -m json.tool     # counts + "needs a human" list
+curl -s localhost:8000/api/status | python3 -m json.tool     # counts + "needs a human" list
 curl -s "localhost:8000/api/tasks?state=in-review"
 ```
 
 To answer a blocked task, edit the issue text and re-apply the label:
-`python scripts/simulate_webhook.py --issue 2 --title "Paramiko SHA-1" --body "Answer: use the config mitigation."`
+`python3 scripts/simulate_webhook.py --issue 2 --title "Paramiko SHA-1" --body "Answer: use the config mitigation."`
 → a fresh session starts with the updated text.
 
 No Docker? `pip install -r requirements.txt`, export the variables from `.env.example`, then
-`uvicorn app.main:create_app --factory --port 8000`. There is also a CLI: `python -m app.cli status | enqueue | tick | worker`.
+`uvicorn app.main:create_app --factory --port 8000`. There is also a CLI: `python3 -m app.cli status | enqueue | tick | worker`.
 
 ## Using the real Devin API
 
@@ -87,7 +87,7 @@ No Docker? `pip install -r requirements.txt`, export the variables from `.env.ex
 2. Set in `.env`: `DEVIN_MODE=real`, `DEVIN_API_KEY`, `DEVIN_ORG_ID`, and a random `GITHUB_WEBHOOK_SECRET`.
 3. **Try one session first (M0)**, capped at 2 ACUs, no database involved:
    ```bash
-   python scripts/m0_run_session.py --title "probe" --max-acu 2 \
+   python3 scripts/m0_run_session.py --title "probe" --max-acu 2 \
      --prompt "Do not change code. Ask me which of red or blue I prefer, then finish."
    ```
 4. Register the webhook on the fork: Settings → Webhooks → payload URL `https://<your-tunnel>/webhook/github`,
@@ -113,7 +113,7 @@ Devin needs its GitHub integration connected to the fork so it can push branches
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -t .      # 49 tests, standard library only
+python3 -m unittest discover -s tests -t .      # 49 tests, standard library only
 ```
 
 The outcome tests use the exact response shapes observed against the real API. The suite was also
