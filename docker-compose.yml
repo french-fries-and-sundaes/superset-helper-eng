@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      # Edit knowledge/*.md without rebuilding; the bot reads it when it starts a session.
+      - ./knowledge:/app/knowledge:ro
+    restart: unless-stopped
