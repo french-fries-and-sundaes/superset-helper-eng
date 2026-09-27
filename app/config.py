@@ -49,6 +49,8 @@ class Settings:
     # workflow on the fork reports; "off" moves straight to in-review.
     verify_mode: str = "actions"
     verify_workflow_name: str = "devin-verify"
+    verify_timeout_minutes: int = 45  # a PR check that never reports moves the task to failed after this long
+    devin_branch_prefix: str = "devin/"  # branch prefix of Devin's PRs; recognises its merged fixes in history
 
     # Guards
     max_sessions_per_day: int = 20  # rolling 24h; the primary spend guard (scan/learn count too)
@@ -89,6 +91,8 @@ class Settings:
             knowledge_label=env.get("KNOWLEDGE_LABEL", cls.knowledge_label).strip(),
             verify_mode=env.get("VERIFY_MODE", "actions").strip().lower(),
             verify_workflow_name=env.get("VERIFY_WORKFLOW_NAME", cls.verify_workflow_name).strip(),
+            verify_timeout_minutes=int(env.get("VERIFY_TIMEOUT_MINUTES", cls.verify_timeout_minutes)),
+            devin_branch_prefix=env.get("DEVIN_BRANCH_PREFIX", cls.devin_branch_prefix).strip() or cls.devin_branch_prefix,
             max_sessions_per_day=_int(env, "MAX_SESSIONS_PER_DAY", 20),
             max_acu_per_session=_opt_int(env, "MAX_ACU_PER_SESSION"),
             scan_max_findings=_int(env, "SCAN_MAX_FINDINGS", 7),

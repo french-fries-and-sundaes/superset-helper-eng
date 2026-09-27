@@ -99,7 +99,7 @@ usage" on Devin's Usage & limits page; after, note it again and divide the diffe
 | Webhook delivery shows 401 | Secret differs between `.env` and the webhook, or the payload was altered |
 | Webhook delivery shows 503 | `GITHUB_WEBHOOK_SECRET` is not set |
 | Label applied but nothing starts | Event not subscribed; wrong repo in `TARGET_REPO`; or the daily session limit was reached |
-| Task stuck at "verifying PR" | Workflow not installed, or the webhook lacks the **Workflow runs** event, or the PR body has no `Closes #N` |
+| Task shows "checking the PR" for a long time | Workflow not installed or invalid, or the webhook lacks the **Workflow runs** event, or the PR body has no `Closes #N`. After `VERIFY_TIMEOUT_MINUTES` (default 45) the task moves to failed with an explanation |
 | Verification fails immediately | The verify command uses a program outside the allowlist (see the workflow log) |
 | A session never appears | Check the container log for `session_start_failed`; a 403 means the service user lacks permission |
 | Labels missing | Run `python3 scripts/seed_fork.py --labels-only` |

@@ -74,7 +74,8 @@ class Syncer:
             return (
                 f"Devin started working on this (attempt {attempt}).{session_line}\n\n"
                 "It runs the verify command on the unmodified code first. If the problem does not reproduce, "
-                "or the task is unclear, it stops and asks instead of guessing."
+                "or the task is unclear, it stops and asks instead of guessing. When it opens a pull request, "
+                "GitHub Actions checks it and this issue stays in progress until the check reports."
             )
         if state is State.BLOCKED:
             q = task["blocked_question"] or "Devin is waiting for input."
@@ -88,9 +89,9 @@ class Syncer:
         if state is State.IN_REVIEW:
             prs = "\n".join(f"- {u}" for u in task["pr_urls"]) or "- (see the linked pull request)"
             verified = (
-                "Independent verification passed on GitHub Actions."
+                "The PR checks passed on GitHub Actions."
                 if self.settings.verify_mode == "actions"
-                else "Independent verification is turned off."
+                else "PR checks are turned off."
             )
             return (
                 f"A pull request is ready for review:\n{prs}\n\n{verified}\n\n"

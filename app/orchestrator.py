@@ -142,9 +142,11 @@ class Orchestrator:
     def import_from_github(self) -> dict[str, Any]:
         """Catch up on issues the bot never saw a webhook for (created before the webhook existed,
         or labeled while the bot was down). Reads open issues labeled devin:proposed / devin:ready
-        and registers them exactly as the webhook would. Safe to run repeatedly."""
+        and registers them exactly as the webhook would. It also recovers finished work from history: merged
+        Devin pull requests (branch prefix devin/, body "Closes #N") for issues the bot has no record of become
+        completed tasks. Open or in-flight work is never adopted. Safe to run repeatedly."""
         repo = self.settings.target_repo
-        out: dict[str, Any] = {"status": "ok", "proposed": 0, "ready": 0, "seen": 0, "errors": []}
+        out: dict[str, Any] = {"status": "ok", "proposed": 0, "ready": 0, "recovered": 0, "seen": 0, "errors": []}
         if getattr(self.github, "dry_run", False):
             out["status"] = "dry_run"
             return out
@@ -162,16 +164,51 @@ class Orchestrator:
                         out["proposed"] += 1
                 elif self.request_ready(repo, number, title, body, source="import") in ("created", "requeued"):
                     out["ready"] += 1
-        if out["errors"] and not (out["proposed"] or out["ready"]):
+        out["recovered"] = self._recover_merged_fixes(repo, out["errors"])
+        if out["errors"] and not (out["proposed"] or out["ready"] or out["recovered"]):
             out["status"] = "error"
         self.sync()
         return out
+
+    def _recover_merged_fixes(self, repo: str, errors: list[str]) -> int:
+        """Re-create a completed task for each merged Devin PR whose issue the bot has no record of."""
+        try:
+            prs = self.github.list_merged_prs_from_branch(repo, self.settings.devin_branch_prefix)
+        except GitHubAPIError as e:
+            errors.append(f"merged pull requests: {e}")
+            return 0
+        recovered = 0
+        for pr in sorted(prs, key=lambda p: p["merged_at"]):
+            for issue_no in dict.fromkeys(parse_closes(pr["body"])):
+                if self.store.get_task_by_issue(repo, issue_no) is not None:
+                    continue
+                try:
+                    issue = self.github.get_issue(repo, issue_no)
+                except GitHubAPIError:
+                    issue = {}
+                when = int(pr["merged_at"] or self.now())
+                task = self.store.create_task(
+                    repo, issue_no, issue.get("title") or pr["title"] or f"Issue #{issue_no}",
+                    issue.get("body") or "", State.COMPLETED, "import", now=when,
+                )
+                self.store.update_task(
+                    task["id"], attempt=1, synced_state=State.COMPLETED.value, pr_urls=[pr["html_url"]],
+                    last_summary=f"Recovered from GitHub: PR #{pr['number']} was merged.",
+                )
+                self.store.upsert_pr(task["id"], pr["number"], pr["html_url"], pr["head_sha"], "merged")
+                self.store.add_event(
+                    task["id"], "state_changed",
+                    f"in-progress -> completed: recovered from merged PR #{pr['number']}", ts=when,
+                )
+                recovered += 1
+        return recovered
 
     # ============================================================================
     # worker
     # ============================================================================
     def tick(self) -> None:
         self.poll_active()
+        self.check_verify_timeouts()
         self.poll_jobs()
         self.dispatch_ready()
         self.sync()
@@ -272,7 +309,7 @@ class Orchestrator:
                 self.store.transition(task_id, State.IN_REVIEW, r.summary or "PR opened", expected=State.IN_PROGRESS)
             else:
                 self.store.update_task(task_id, verify_status="pending")
-                self.store.add_event(task_id, "verification_pending", ", ".join(r.pr_urls))
+                self.store.add_event(task_id, "verification_pending", ", ".join(r.pr_urls), ts=int(self.now()))
                 self.evaluate_gate(task_id)
         elif r.kind == "blocked":
             question = r.question or self._last_devin_message(sid) or "Devin is waiting for input."
@@ -336,7 +373,7 @@ class Orchestrator:
         return "pending"
 
     def _verification_failure_text(self, task: dict[str, Any], pr: dict[str, Any]) -> str:
-        text = f"The independent verification check failed for PR #{pr['pr_number']}."
+        text = f"The PR verification check failed for PR #{pr['pr_number']}."
         if pr.get("verify_url"):
             text += f" Run: {pr['verify_url']}"
         excerpt = ""
@@ -347,10 +384,46 @@ class Orchestrator:
                 excerpt = ""
         if excerpt:
             text += f"\n\nEnd of the failing log:\n```\n{excerpt}\n```"
+        else:
+            text += (
+                "\n\nNo failing test log could be read. Open the run for details; if no tests ran, the verify "
+                "workflow file may be invalid."
+            )
         return text
 
+    def check_verify_timeouts(self) -> int:
+        """A finished session's PR check that never reports would leave the task waiting forever.
+        After VERIFY_TIMEOUT_MINUTES, move it to failed so a human sees it."""
+        limit = self.settings.verify_timeout_minutes * 60
+        moved = 0
+        for task in self.store.list_tasks(State.IN_PROGRESS):
+            if task["verify_status"] != "pending" or limit <= 0:
+                continue
+            started = next(
+                (ev["ts"] for ev in self.store.list_events(task["id"], limit=1000) if ev["kind"] == "verification_pending"),
+                None,
+            )
+            if started is None or self.now() - started < limit:
+                continue
+            why = (
+                f"The PR check never reported within {self.settings.verify_timeout_minutes} minutes. Look at the pull request's "
+                "Checks tab and the fork's Actions tab. If the PR is fine, review and merge it; otherwise fix the check, "
+                "then comment and re-apply `devin:ready`."
+            )
+            self.store.update_task(task["id"], last_summary=why, verify_status="timed_out")
+            if self.store.transition(task["id"], State.FAILED, "PR check timed out", expected=State.IN_PROGRESS):
+                self.store.add_event(task["id"], "verification_timeout", why)
+                moved += 1
+        return moved
+
+    def _is_verify_run(self, run: dict[str, Any]) -> bool:
+        """The verify workflow's run. When its file is invalid GitHub names the run after the file path
+        (".github/workflows/devin-verify.yml") instead of the workflow name, so accept both."""
+        name = self.settings.verify_workflow_name
+        return run.get("name") == name or (run.get("path") or run.get("name") or "").endswith(f"/{name}.yml")
+
     def handle_workflow_run(self, repo: str, run: dict[str, Any]) -> str:
-        if run.get("name") != self.settings.verify_workflow_name:
+        if not self._is_verify_run(run):
             return "ignored"
         conclusion = run.get("conclusion")
         if conclusion == "cancelled" or conclusion is None:

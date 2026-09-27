@@ -113,3 +113,23 @@ class RecordingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergedPrListingTests(unittest.TestCase):
+    def test_only_merged_pull_requests_from_devin_branches_are_returned(self):
+        def pr(n, ref, merged):
+            return {"number": n, "html_url": f"u{n}", "title": f"t{n}", "body": f"Closes #{n}",
+                    "head": {"ref": ref, "sha": f"sha{n}"}, "merged_at": merged}
+
+        def handler(req):
+            assert req.url.params["state"] == "closed"
+            return httpx.Response(200, json=[
+                pr(1, "devin/123-fix", "2026-09-27T00:10:00Z"),
+                pr(2, "devin/456-closed-unmerged", None),
+                pr(3, "feature/human", "2026-09-27T00:11:00Z"),
+            ])
+
+        out = make(handler).list_merged_prs_from_branch("o/r", "devin/")
+        self.assertEqual([p["number"] for p in out], [1])
+        self.assertEqual(out[0]["merged_at"], 1790467800)
+        self.assertEqual(out[0]["head_sha"], "sha1")

@@ -19,10 +19,10 @@ demonstrable on screen. Record with the dashboard open; `PAUSE=3 bash scripts/de
 ## 0:45 How (2 min 15 s): show it running
 1. **Trigger (20 s).** Show an issue with `devin:proposed`. Apply `devin:ready`. "That label is the event. It is
    also the access control: only collaborators can apply it."
-2. **Devin at work (40 s).** Dashboard: task moves to *Working now*; the issue gets a comment with the session
+2. **Devin at work (40 s).** Dashboard: task shows under *In progress*; the issue gets a comment with the session
    link. Open the Devin session. "One session per issue. Step one is triage: it runs the issue's verify command on
    unmodified code, and stops to ask if the problem doesn't exist."
-3. **Independent verification (30 s).** The PR opens; dashboard shows *Verifying*. Show the `devin-verify`
+3. **Independent verification (30 s).** The PR opens; the task stays *In progress* with "checking the PR". Show the `devin-verify`
    workflow on the PR. "Devin's 'done' is a claim. This check is the evidence, and it only runs allowlisted commands
    read from the issue through the API."
 4. **Human in the loop (25 s).** Task lands in *Out for review*. Request changes in a review comment; show the

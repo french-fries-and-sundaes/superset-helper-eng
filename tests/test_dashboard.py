@@ -60,7 +60,7 @@ class DashboardTests(unittest.TestCase):
         hook(c, "issues", issue_event("labeled", 1, "Fix", label="devin:ready"), "a")
         for _ in range(6):
             orch.tick()
-        self.assertIn("verifying PR", c.get("/").text)
+        self.assertIn("checking the PR", c.get("/").text)
         hook(c, "workflow_run", workflow_run("success", [101]), "w")
         self.assertIn("Review the pull request", c.get("/").text)
 

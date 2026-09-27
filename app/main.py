@@ -189,7 +189,8 @@ def _flash(kind: str, result: dict[str, Any]) -> str:
         if status == "error":
             return f"Could not read issues from GitHub: {'; '.join(result.get('errors', []))}"
         return (
-            f"Imported {result.get('proposed', 0)} proposed and {result.get('ready', 0)} ready issue(s) "
+            f"Imported {result.get('proposed', 0)} proposed and {result.get('ready', 0)} ready issue(s); "
+            f"recovered {result.get('recovered', 0)} merged fix(es) from history "
             f"({result.get('seen', 0)} labeled issue(s) checked)."
         )
     if status == "started":

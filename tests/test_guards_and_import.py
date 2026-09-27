@@ -171,7 +171,9 @@ class DashboardControlTests(unittest.TestCase):
         self.assertIn('<details class="fold" id="fold-working">', page)
         self.assertIn('<details class="fold" id="fold-activity">', page)
         self.assertNotIn("<details class=\"fold\" id=\"fold-working\" open", page)
-        self.assertLess(page.index("Sync now"), page.index("Needs a human</h2>"))
+        self.assertIn('<details class="fold" id="fold-sync">', page)
+        self.assertGreater(page.index("Sync now"), page.index("Recent activity"))  # tucked away at the bottom
+        self.assertLess(page.index("Run scan now"), page.index("Needs a human</h2>"))
         self.assertRegex(page, r"Updated \d\d:\d\d:\d\d UTC")
 
     def test_sync_button_explains_dry_run(self):
@@ -196,3 +198,94 @@ class FlashMessageTests(unittest.TestCase):
         self.assertIn("scan started", page)
         self.assertIn('<meta http-equiv="refresh" content="10;url=/?window=7d">', page)
         self.assertNotIn("scan started", render_dashboard(orch, "7d"))
+
+
+class RecoverMergedFixesTests(unittest.TestCase):
+    def gh(self, prs, issues=None):
+        issues = issues or {}
+
+        class Listing(RecordingGitHub):
+            dry_run = False
+
+            def list_merged_prs_from_branch(self, repo, prefix, max_pages=5):
+                assert prefix == "devin/"
+                return list(prs)
+
+            def get_issue(self, repo, number):
+                return issues.get(number, {"number": number, "title": f"issue {number}", "body": "b"})
+
+        return Listing()
+
+    def pr(self, number, closes, merged_at=1_000_000):
+        return {"number": number, "html_url": f"https://github.com/o/r/pull/{number}", "title": f"PR {number}",
+                "body": f"Closes #{closes}", "head_sha": "abc", "merged_at": merged_at}
+
+    def wire(self, orch, gh):
+        orch.github = orch.syncer.github = gh
+
+    def test_a_merged_devin_pr_becomes_a_completed_task(self):
+        orch, store, *_ = build()
+        self.wire(orch, self.gh([self.pr(11, 5)], {5: {"title": "Real title", "body": "Real body"}}))
+        out = orch.import_from_github()
+        self.assertEqual(out["recovered"], 1)
+        t = task(store, 5)
+        self.assertEqual((t["state"], t["source"], t["title"]), ("completed", "import", "Real title"))
+        self.assertEqual(store.prs_for_task(t["id"])[0]["state"], "merged")
+
+    def test_recovered_fixes_count_as_merged_in_the_metrics_and_the_window(self):
+        from app.metrics import compute_metrics
+
+        orch, store, _, _, clock = build()
+        self.wire(orch, self.gh([self.pr(11, 5, merged_at=int(clock.t) - 60)]))
+        orch.import_from_github()
+        m = compute_metrics(store, now=clock.t, completed_window=24 * 3600)
+        self.assertEqual((m["outcomes"]["merged"], m["completed_in_window"]), (1, 1))
+
+    def test_it_is_idempotent_and_leaves_known_tasks_alone(self):
+        orch, store, *_ = build()
+        orch.request_ready(REPO, 5, "mine", "b")  # the bot already tracks #5
+        self.wire(orch, self.gh([self.pr(11, 5), self.pr(12, 6)]))
+        self.assertEqual(orch.import_from_github()["recovered"], 1)
+        self.assertEqual(orch.import_from_github()["recovered"], 0)
+        self.assertEqual(task(store, 5)["title"], "mine")
+        self.assertEqual(state_of(store, 6), "completed")
+
+    def test_it_never_posts_labels_or_comments_for_recovered_tasks(self):
+        orch, store, *_ = build()
+        listing = self.gh([self.pr(11, 5)])
+        self.wire(orch, listing)
+        orch.import_from_github()
+        self.assertEqual([c for c in listing.calls if c[0] in ("comment", "set_status_label")], [])
+
+    def test_a_pr_that_closes_several_issues_recovers_each(self):
+        orch, store, *_ = build()
+        p = self.pr(11, 5)
+        p["body"] = "Closes #5 and fixes #6"
+        self.wire(orch, self.gh([p]))
+        self.assertEqual(orch.import_from_github()["recovered"], 2)
+
+    def test_a_pr_without_a_closes_line_is_ignored(self):
+        orch, store, *_ = build()
+        p = self.pr(11, 5)
+        p["body"] = "Just a change"
+        self.wire(orch, self.gh([p]))
+        self.assertEqual(orch.import_from_github()["recovered"], 0)
+        self.assertEqual(store.count_tasks(), 0)
+
+    def test_a_github_error_is_reported_without_losing_the_rest_of_the_sync(self):
+        orch, store, *_ = build()
+
+        class Broken(RecordingGitHub):
+            dry_run = False
+
+            def list_issues(self, repo, label, state="open"):
+                return [{"number": 8, "title": "t", "body": "b"}] if label == "devin:ready" else []
+
+            def list_merged_prs_from_branch(self, repo, prefix, max_pages=5):
+                raise GitHubAPIError(500, "boom")
+
+        self.wire(orch, Broken())
+        out = orch.import_from_github()
+        self.assertEqual(out["ready"], 1)
+        self.assertEqual(out["status"], "ok")
+        self.assertTrue(any("merged pull requests" in e for e in out["errors"]))

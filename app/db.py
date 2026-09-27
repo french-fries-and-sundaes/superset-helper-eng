@@ -400,9 +400,9 @@ class Store:
             (task_id, int(ts if ts is not None else time.time()), kind, detail),
         )
 
-    def add_event(self, task_id: int | None, kind: str, detail: str = "") -> None:
+    def add_event(self, task_id: int | None, kind: str, detail: str = "", ts: int | None = None) -> None:
         with self._lock:
-            self._event(task_id, kind, detail)
+            self._event(task_id, kind, detail, ts)
 
     def list_events(
         self, task_id: int | None = None, limit: int = 100, ascending: bool = False

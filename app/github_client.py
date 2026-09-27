@@ -7,8 +7,10 @@ instead of sent, so the whole workflow can be demonstrated without touching GitH
 """
 from __future__ import annotations
 
+import calendar
 import logging
 import re
+import time
 import urllib.parse
 from typing import Any
 
@@ -23,6 +25,14 @@ log = logging.getLogger(__name__)
 BOT_MARKER = "<!-- superset-helper-eng:bot -->"
 
 from .labels import LABEL_COLORS  # noqa: E402,F401  (re-exported)
+
+
+def _epoch(iso: str) -> int:
+    """GitHub timestamp like 2026-09-27T00:10:00Z to epoch seconds (0 if unparsable)."""
+    try:
+        return calendar.timegm(time.strptime(iso, "%Y-%m-%dT%H:%M:%SZ"))
+    except (ValueError, TypeError):
+        return 0
 
 
 class GitHubAPIError(Exception):
@@ -92,6 +102,28 @@ class GitHubClient:
             if len(data) < 100:
                 break
         return items
+
+    def list_merged_prs_from_branch(self, repo: str, prefix: str, max_pages: int = 5) -> list[dict[str, Any]]:
+        """Merged pull requests whose branch starts with `prefix` (Devin's branches).
+        Looks at up to max_pages * 100 recently updated closed PRs."""
+        out: list[dict[str, Any]] = []
+        for page in range(1, max_pages + 1):
+            data = self._req(
+                "GET", f"repos/{repo}/pulls",
+                params={"state": "closed", "sort": "updated", "direction": "desc", "per_page": 100, "page": page},
+            ) or []
+            for d in data:
+                ref = (d.get("head") or {}).get("ref") or ""
+                if not d.get("merged_at") or not ref.startswith(prefix):
+                    continue
+                out.append({
+                    "number": d["number"], "html_url": d["html_url"], "title": d.get("title") or "",
+                    "body": d.get("body") or "", "head_sha": (d.get("head") or {}).get("sha", ""),
+                    "merged_at": _epoch(d["merged_at"]),
+                })
+            if len(data) < 100:
+                break
+        return out
 
     def comment(self, repo: str, number: int, body: str) -> dict[str, Any]:
         return self._req("POST", f"repos/{repo}/issues/{number}/comments", json={"body": body + "\n\n" + BOT_MARKER})
@@ -181,6 +213,9 @@ class RecordingGitHub:
 
     def get_issue(self, repo: str, number: int) -> dict[str, Any]:
         return {"number": number, "state": "open"}
+
+    def list_merged_prs_from_branch(self, repo: str, prefix: str, max_pages: int = 5) -> list[dict[str, Any]]:
+        return []
 
     def list_issues(self, repo: str, label: str, state: str = "open") -> list[dict[str, Any]]:
         return []  # dry run: there is no real GitHub to read from

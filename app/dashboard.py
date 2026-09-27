@@ -219,11 +219,10 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
 
     tiles = (
         tile("Backlog", counts["ready"], "approved, waiting for a session")
-        + tile("Working now", working, "Devin sessions running")
-        + tile("Verifying", verifying, "PR checks running")
+        + tile("In progress", counts["in-progress"], f"{working} Devin running, {verifying} checking the PR")
         + tile("Out for review", counts["in-review"], "waiting for a human")
         + tile("Needs a human", len(needs), "proposed, blocked, failed, in review")
-        + f'<div class="card tile"><div class="lab">Sessions today</div>{_meter(summary["sessions_last_24h"], summary["max_sessions_per_day"])}</div>'
+        + f'<div class="card tile" style="grid-column:span 2"><div class="lab">Sessions today</div>{_meter(summary["sessions_last_24h"], summary["max_sessions_per_day"])}</div>'
     )
 
     need_rows = [
@@ -234,7 +233,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
     flight_rows = [
         [
             _issue_link(t["repo"], t["issue_number"], t["title"]),
-            _pill(t["state"]) + (' <span class="muted small">verifying PR</span>' if t["verify_status"] == "pending" else ""),
+            _pill(t["state"]) + (' <span class="muted small">checking the PR</span>' if t["verify_status"] == "pending" else ""),
             str(t["attempt"]),
             _age(t["updated_at"], now),
             _links(t, orch),
@@ -303,12 +302,15 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         "scan", "Sweep for problems", "A Devin session runs audits and linters and files findings as devin:proposed issues for approval.", "/actions/scan"
     ) + job_card(
         "learn", "Learn from feedback", "Turns human feedback since the last run into one batched PR against knowledge/.", "/actions/learn"
-    ) + (
-        '<div class="card act"><div class="row"><b>Sync from GitHub</b>'
-        '<form method="post" action="/actions/sync"><button type="submit">Sync now</button></form></div>'
-        '<div class="muted small">Imports open issues labeled devin:proposed or devin:ready that the bot has not seen '
-        '(for example, created before the webhook existed). Also runs once at startup.</div></div>'
     ) + "</div>"
+
+    sync_html = (
+        '<details class="fold" id="fold-sync"><summary>Sync from GitHub (rarely needed)</summary>'
+        '<div class="card act"><div class="row"><div class="muted small">Catches up with GitHub: imports open issues '
+        'labeled devin:proposed or devin:ready that the bot has not seen, and recovers merged Devin fixes it has no '
+        'record of (for example after the database was reset). Also runs once at startup.</div>'
+        '<form method="post" action="/actions/sync"><button type="submit">Sync now</button></form></div></div></details>'
+    )
 
     events = store.list_events(limit=12)
     by_id = {t["id"]: t for t in tasks}
@@ -337,6 +339,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         + '<details class="fold" id="fold-activity"><summary>Recent activity</summary>'
         + _table([("When", True), ("Task", False), ("Event", False), ("Detail", False)], ev_rows, "No activity yet.")
         + "</details>"
+        + sync_html
         + '<p class="muted small">This page refreshes every 10 seconds. JSON: <a href="/api/status">/api/status</a> · <a href="/api/metrics">/api/metrics</a> · <a href="/api/tasks">/api/tasks</a></p>'
     )
     return _page("superset-helper-eng", body, refresh_url=f"/?window={e(window)}")

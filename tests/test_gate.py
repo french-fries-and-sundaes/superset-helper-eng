@@ -127,3 +127,49 @@ class GateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrokenWorkflowAndTimeoutTests(unittest.TestCase):
+    def setUp(self):
+        self.orch, self.store, self.devin, self.gh, self.clock = build(verify_mode="actions")
+        self.orch.request_ready(REPO, 1, "Fix thing", "body")
+        run_ticks(self.orch)
+        self.assertEqual(state_of(self.store, 1), "in-progress")
+        self.assertEqual(task(self.store, 1)["verify_status"], "pending")
+        self.sha = self.store.prs_for_task(task(self.store, 1)["id"])[0]["head_sha"]
+
+    def test_a_run_of_an_invalid_workflow_file_fails_the_task_with_a_clear_reason(self):
+        # GitHub names such a run after the file path and attaches no pull request to it.
+        run = {"name": ".github/workflows/devin-verify.yml", "path": ".github/workflows/devin-verify.yml",
+               "conclusion": "failure", "head_sha": self.sha, "html_url": "https://github.com/o/r/actions/runs/9",
+               "id": 9, "pull_requests": []}
+        if not self.sha:  # fake PRs may carry no sha: link by pull request number instead
+            run["pull_requests"] = [{"number": self.store.prs_for_task(task(self.store, 1)["id"])[0]["pr_number"]}]
+        self.assertEqual(self.orch.handle_workflow_run(REPO, run), "failed")
+        self.assertEqual(state_of(self.store, 1), "failed")
+        self.assertIn("workflow file may be invalid", task(self.store, 1)["last_summary"])
+
+    def test_other_workflows_are_still_ignored(self):
+        run = {"name": "unit-tests", "path": ".github/workflows/unit-tests.yml", "conclusion": "failure",
+               "head_sha": self.sha, "pull_requests": []}
+        self.assertEqual(self.orch.handle_workflow_run(REPO, run), "ignored")
+        self.assertEqual(state_of(self.store, 1), "in-progress")
+
+    def test_a_check_that_never_reports_times_out_into_failed(self):
+        self.clock.t += 44 * 60
+        self.assertEqual(self.orch.check_verify_timeouts(), 0)
+        self.assertEqual(state_of(self.store, 1), "in-progress")
+        self.clock.t += 2 * 60
+        self.assertEqual(self.orch.check_verify_timeouts(), 1)
+        t = task(self.store, 1)
+        self.assertEqual((t["state"], t["verify_status"]), ("failed", "timed_out"))
+        self.assertIn("never reported", t["last_summary"])
+        self.assertEqual(self.orch.check_verify_timeouts(), 0)  # once only
+
+    def test_a_result_that_arrives_in_time_wins_over_the_timeout(self):
+        pr = self.store.prs_for_task(task(self.store, 1)["id"])[0]
+        self.store.set_pr_verify(task(self.store, 1)["id"], pr["pr_number"], "passed", "u", 1)
+        self.orch.evaluate_gate(task(self.store, 1)["id"])
+        self.clock.t += 3600
+        self.orch.check_verify_timeouts()
+        self.assertEqual(state_of(self.store, 1), "in-review")
