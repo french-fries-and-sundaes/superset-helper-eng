@@ -3,19 +3,69 @@
 An event-driven automation that uses **Devin as its worker** to fix engineering issues in a fork of
 [Apache Superset](https://github.com/apache/superset) (`french-fries-and-sundaes/superset`).
 
-A human approves a GitHub issue with one label, `devin:ready` → a webhook fires → this service starts **one
-Devin session per issue** through the Devin API → Devin triages, fixes, and opens a pull request → an
-**independent GitHub Actions check** verifies it → **a human reviews and merges.** Nothing ever merges
-automatically, and every stage is visible on a dashboard.
+## A. Problem
 
-## What problem this solves
+Engineers face a long tail of small, well-understood work. Each item is easy to fix on its own, but the
+volume of them — and the constant context-switching required to handle them — wastes a lot of engineering
+time.
 
-Engineering teams carry a long tail of small, well-understood work: dependency advisories, lint and type
-errors, missing tests. Each item is cheap to fix and expensive to *context-switch into*, so the list only grows.
-This system turns that backlog into a pipeline: Devin does the fixing, and people spend their time on the two
-things only people should do, **approving what is worth doing** and **reviewing what was done**.
+Some examples: failing tests, lint issues, and dependency advisories.
 
-## How it works
+With intentional human-in-the-loop development, most of that pain can be automated away, letting developers
+focus on the two things only they should do: deciding what work is worth handing to Devin, and reviewing
+what it did.
+
+## B. How does it work?
+
+A human approves a GitHub issue with one label, `devin:ready`. That fires a webhook, and this service starts
+a Devin session for the issue. Devin triages it, fixes it, and opens a pull request. An independent GitHub
+Actions check verifies the fix. A human reviews and merges. Nothing ever merges automatically, and every
+stage is visible on a dashboard.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/task-lifecycle-dark.png">
+  <img alt="Task lifecycle diagram: a Superset issue moves top to bottom through created, acted on, Devin working, outcome (blocked, failed, or in review), and closed (not needed, rejected, or completed), with human actions in indigo and bot/CI actions in teal." src="docs/images/task-lifecycle-light.png">
+</picture>
+
+### Setup
+
+No keys and no cost to try it:
+
+```bash
+cp .env.example .env                # DEVIN_MODE=fake, GITHUB_TOKEN empty (dry run)
+docker compose up --build           # dashboard on http://localhost:8000
+bash scripts/demo.sh                # plays the whole lifecycle; watch the dashboard
+```
+
+For the full walkthrough (individual events, no-Docker setup) and going live with real Devin and real GitHub,
+see **[Developer information](#e-developer-information)** below.
+
+## C. Why use an autonomous coding agent?
+
+An autonomous agent is uniquely useful here because it continually adapts to the codebase over time, getting
+better at enterprise-specific, automatable tasks — while still operating under dependable guardrails, for
+example through:
+
+1. **Clear visibility into every Devin session.**
+2. **A clear handshake between humans and Devin** that determines what gets worked on, and what makes it
+   into the codebase.
+
+## D. Next steps
+
+To further integrate this, a few steps are worth prioritizing:
+
+1. **Revise the knowledge base** to be better adapted to this codebase, so Sweep, Triage, and Development
+   start from a stronger baseline.
+2. **Turn Sweep and Learn into periodic cron jobs**, calibrated to avoid noise.
+3. **Right-size parallel Devin sessions.** Work out the cost of an average completed task, this
+   organization's task throughput, and its budget, to land on the right number of concurrent sessions.
+4. **Align the dashboard with leadership's KPIs.** Understand what leadership is tracking, find the right
+   proxies to surface at the top of the dashboard, and move everything else needed for diagnosis behind a
+   Developer Options section.
+
+## E. Developer information
+
+### Architecture
 
 ```
  scan (button / CLI) ──▶ Devin sweep ──▶ issues labeled devin:proposed ─┐
@@ -32,6 +82,11 @@ things only people should do, **approving what is worth doing** and **reviewing 
                                                                         └ fail ─▶ devin:failed        merges
  human feedback (rejections, comments, review notes) ─▶ learn (button / CLI) ─▶ ONE batched PR to knowledge/
 ```
+
+### Task lifecycle reference
+
+Every row below is a real transition enforced in `app/states.py` / `app/orchestrator.py` — not an
+approximation. It's the same rulebook the diagram above is drawn from.
 
 | Label | Meaning | Human needed? | Exit |
 |---|---|---|---|
@@ -82,7 +137,7 @@ Human actions are ordinary GitHub actions: labels, comments, PR reviews, merge, 
 - **Rules as code.** `knowledge/*.md` is injected into every prompt. The `learn` job proposes changes as a PR, so
   nothing Devin "learns" takes effect until a person merges it.
 
-## Quick start: the full workflow with no keys and no cost
+### Quick start: the full workflow with no keys and no cost
 
 ```bash
 cp .env.example .env                # DEVIN_MODE=fake, GITHUB_TOKEN empty (dry run)
@@ -116,7 +171,7 @@ python3 scripts/simulate_webhook.py --help                                      
 No Docker? `python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt`, export the
 variables from `.env.example`, then `uvicorn app.main:create_app --factory --port 8000`.
 
-## Going live (real Devin, real GitHub)
+### Going live (real Devin, real GitHub)
 
 Follow **[docs/GO_LIVE.md](docs/GO_LIVE.md)**: service user and token, `.env`, one command to create the labels and
 seven issues on the fork (`scripts/seed_fork.py`), installing the verification workflow, the webhook, and a
@@ -127,7 +182,7 @@ python3 scripts/m0_run_session.py --title "probe" --max-acu 2 \
   --prompt "Do not change code. Ask me which of red or blue I prefer, then finish."
 ```
 
-## The dashboard: "how would I know this is working?"
+### The dashboard: "how would I know this is working?"
 
 `http://localhost:8000` answers it in one screen: fixes merged (hero number, filterable by window), the
 pipeline (backlog, working, verifying, out for review), a **needs-a-human list that states exactly what each task
@@ -141,7 +196,7 @@ timeline. JSON: `/api/status`, `/api/tasks`, `/api/metrics`, `/api/jobs`. Button
 **Sync from GitHub** that imports labeled issues the bot never saw a webhook for. The page shows when it was last
 updated, refreshes itself every 15 seconds, and has a **Refresh now** link.
 
-## Configuration
+### Configuration
 
 See `.env.example` (every variable is documented there). The important ones:
 
@@ -153,7 +208,7 @@ See `.env.example` (every variable is documented there). The important ones:
 | `MAX_SESSIONS_PER_DAY` | `20` | rolling 24h cap (fix + scan + learn sessions) |
 | `DASHBOARD_PASSWORD` | empty | protects everything except the webhook; **set it behind a tunnel** |
 
-## Tests
+### Tests
 
 ```bash
 python3 -m unittest discover -s tests -t .      # 187 tests, standard library only
@@ -163,7 +218,7 @@ Outcome tests use response shapes observed against the real Devin API. The suite
 the daily limit, the signature check, the idle-vs-blocked rule, duplicate detection, stale-verification handling,
 bot-comment filtering, HTML escaping, or the dashboard password each makes a test fail.
 
-## Project layout
+### Project layout
 
 ```
 app/           orchestrator (state machine, worker, gate, jobs), webhook, dashboard, metrics, GitHub + Devin clients
@@ -175,7 +230,7 @@ docs/          GO_LIVE.md (checklist), DEMO.md (5-minute video script)
 tests/
 ```
 
-## Known limitations and next steps
+### Known limitations
 
 - **No real dedupe on scans.** The sweep prompt asks Devin to skip anything already covered by an existing issue
   and to report what it skipped, but a rejected or unapproved finding can be re-filed. Next: a stable fingerprint
