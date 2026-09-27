@@ -1,7 +1,7 @@
 # Superset Helper Eng
 
 An event-driven automation that uses **Devin as its worker** to fix engineering issues in a fork of
-[Apache Superset](https://github.com/apache/superset) (`french-fries-and-sundaes/superset`).
+[Apache Superset](https://github.com/apache/superset) with observability features to gauge its effectiveness (`french-fries-and-sundaes/superset`).
 
 ## A. Problem
 
