@@ -27,6 +27,8 @@ def rich(text: str) -> str:
     """HTML-escape `text`, showing each Devin session URL as a "Session Link" hyperlink."""
     return _SESSION_URL.sub(lambda m: f'<a href="{m.group(0)}">Session Link</a>', e(text))
 
+NEEDS_ORDER = {State.IN_REVIEW: 0, State.BLOCKED: 1, State.FAILED: 2, State.PROPOSED: 3}
+
 WINDOWS = {"24h": ("last 24 hours", 24 * 3600), "7d": ("last 7 days", 7 * 24 * 3600), "all": ("all time", None)}
 
 GLYPH = {
@@ -51,6 +53,7 @@ CSS = """
 body{margin:0;background:var(--page);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:1180px;margin:0 auto;padding:24px 16px 48px}
 h1{font-size:22px;margin:0;font-weight:600}h2{font-size:16px;margin:32px 0 10px;font-weight:600}
+.dash h1{font-size:40px;line-height:1.15}.dash h2{font-size:32px;line-height:1.2;margin:44px 0 14px}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .sub{color:var(--ink2);margin:2px 0 12px;overflow-wrap:anywhere}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
@@ -186,7 +189,8 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
     verifying = summary["verifying"]
     working = counts["in-progress"] - verifying
     needs = [t for t in tasks if State(t["state"]) in HUMAN_NEEDED]
-    needs.sort(key=lambda t: t["updated_at"])
+    # Most actionable first: PRs to review, then questions from Devin, then failures, then proposals; longest-waiting first within each.
+    needs.sort(key=lambda t: (NEEDS_ORDER.get(State(t["state"]), 9), t["updated_at"]))
 
     s = orch.settings
     chips = "".join(
@@ -321,6 +325,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         ev_rows.append([_age(ev["ts"], now) + " ago", who, e(ev["kind"]), rich(ev["detail"][:160])])
 
     body = (
+        '<div class="dash">'
         f"<h1>superset-helper-eng</h1>"
         f'<div class="sub">Devin finds and fixes issues in <a href="https://github.com/{e(s.target_repo)}">{e(s.target_repo)}</a>; humans review and merge.</div>'
         f'<div class="chips">{chips}</div>{refresh}{flash}{jobs_html}'
@@ -341,6 +346,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         + "</details>"
         + sync_html
         + '<p class="muted small">This page refreshes every 10 seconds. JSON: <a href="/api/status">/api/status</a> · <a href="/api/metrics">/api/metrics</a> · <a href="/api/tasks">/api/tasks</a></p>'
+        + "</div>"
     )
     return _page("superset-helper-eng", body, refresh_url=f"/?window={e(window)}")
 

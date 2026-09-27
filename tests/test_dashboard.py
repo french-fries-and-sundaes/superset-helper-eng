@@ -177,3 +177,23 @@ class AuthTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NeedsAHumanOrderTests(unittest.TestCase):
+    def test_review_first_then_blocked_then_failed_then_proposed_and_oldest_first_within_a_group(self):
+        from app.db import Store
+        from app.states import State
+        from app.dashboard import render_dashboard
+        from tests.helpers import build, REPO
+
+        orch, store, *_ = build()
+        # created in the worst possible order, with the oldest waiting longest
+        specs = [(1, State.PROPOSED, 100), (2, State.FAILED, 200), (3, State.BLOCKED, 300),
+                 (4, State.IN_REVIEW, 500), (5, State.IN_REVIEW, 400), (6, State.BLOCKED, 250)]
+        for n, state, ts in specs:
+            store.create_task(REPO, n, f"task-{n}", "", state, now=ts)
+        page = render_dashboard(orch)
+        section = page[page.index("Needs a human</h2>"):page.index("In flight</h2>")]
+        order = [int(x) for x in __import__("re").findall(r"task-(\d)", section)]
+        # 5 (older review) before 4, then blocked 6 (older) before 3, then failed 2, then proposed 1
+        self.assertEqual(order, [5, 4, 6, 3, 2, 1])
