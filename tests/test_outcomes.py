@@ -163,7 +163,7 @@ class DashboardOutcomeTests(unittest.TestCase):
         self.assertIn("not-needed", page)
         self.assertNotIn("Nothing yet: these are issues Devin flagged", page)  # the section lists the task
         self.assertIn("Pushbacks at triage", page)
-        self.assertIn("Session log", page)
+        self.assertIn("Session Link", page)
 
 
 if __name__ == "__main__":

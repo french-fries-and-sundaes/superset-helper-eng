@@ -166,8 +166,12 @@ class DashboardControlTests(unittest.TestCase):
 
     def test_page_shows_when_it_was_updated_and_a_refresh_link(self):
         page = self.client().get("/").text
-        self.assertIn("Refresh now", page)
-        self.assertIn("refreshes itself every 15 seconds", page)
+        self.assertNotIn("Refresh now", page)
+        self.assertIn("refreshes itself every 10 seconds", page)
+        self.assertIn('<details class="fold" id="fold-working">', page)
+        self.assertIn('<details class="fold" id="fold-activity">', page)
+        self.assertNotIn("<details class=\"fold\" id=\"fold-working\" open", page)
+        self.assertLess(page.index("Sync now"), page.index("Needs a human</h2>"))
         self.assertRegex(page, r"Updated \d\d:\d\d:\d\d UTC")
 
     def test_sync_button_explains_dry_run(self):
@@ -181,3 +185,14 @@ class DashboardControlTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FlashMessageTests(unittest.TestCase):
+    def test_the_one_time_message_is_shown_but_the_automatic_reload_drops_it(self):
+        from app.dashboard import render_dashboard
+
+        orch, *_ = build()
+        page = render_dashboard(orch, "7d", "scan started (session x). Results appear here when Devin finishes.")
+        self.assertIn("scan started", page)
+        self.assertIn('<meta http-equiv="refresh" content="10;url=/?window=7d">', page)
+        self.assertNotIn("scan started", render_dashboard(orch, "7d"))

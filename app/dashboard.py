@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import time
 from typing import Any
 
@@ -18,6 +19,13 @@ from .orchestrator import Orchestrator
 from .states import HUMAN_NEEDED, State
 
 e = html.escape
+
+_SESSION_URL = re.compile(r"https://app\.devin\.ai/sessions/[A-Za-z0-9_-]+")
+
+
+def rich(text: str) -> str:
+    """HTML-escape `text`, showing each Devin session URL as a "Session Link" hyperlink."""
+    return _SESSION_URL.sub(lambda m: f'<a href="{m.group(0)}">Session Link</a>', e(text))
 
 WINDOWS = {"24h": ("last 24 hours", 24 * 3600), "7d": ("last 7 days", 7 * 24 * 3600), "all": ("all time", None)}
 
@@ -72,6 +80,11 @@ td.num,th.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:6px 16px}dt{color:var(--ink2)}dd{margin:0;font-variant-numeric:tabular-nums;font-weight:600}
 button{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer}
 button:hover{filter:brightness(1.08)}
+.actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:8px;margin:10px 0 0}
+.act{padding:8px 12px}.act .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.act button{padding:3px 10px;font-size:13px}.act .muted{margin-top:2px}
+details.fold{margin-top:24px}details.fold>summary{cursor:pointer;font-size:16px;font-weight:600;padding:4px 0}
+details.fold[open]>summary{margin-bottom:10px}
 .muted{color:var(--muted)}.small{font-size:13px}
 .tabs a{margin-right:10px}.tabs .on{font-weight:600;color:var(--ink);text-decoration:underline}
 pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:13px}
@@ -79,12 +92,23 @@ pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--hair);
 """
 
 
-def _page(title: str, body: str, refresh: int | None = 15) -> str:
-    meta = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
+# The page reloads itself, which would close an opened section. Remember open sections for this tab.
+FOLD_JS = (
+    "<script>(function(){try{var k='fold-open',o=JSON.parse(sessionStorage.getItem(k)||'[]');"
+    "document.querySelectorAll('details.fold').forEach(function(d){if(o.indexOf(d.id)>-1)d.open=true;"
+    "d.addEventListener('toggle',function(){var a=[];document.querySelectorAll('details.fold[open]')"
+    ".forEach(function(x){a.push(x.id)});sessionStorage.setItem(k,JSON.stringify(a))})})}catch(e){}})();</script>"
+)
+
+
+def _page(title: str, body: str, refresh: int | None = 10, refresh_url: str = "") -> str:
+    # `refresh_url` lets a reload land on a clean address (the one-time flash message is not repeated).
+    target = f";url={e(refresh_url)}" if refresh_url else ""
+    meta = f'<meta http-equiv="refresh" content="{refresh}{target}">' if refresh else ""
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"{meta}<title>{e(title)}</title><style>{CSS}</style></head><body><main>{body}</main></body></html>"
+        f"{meta}<title>{e(title)}</title><style>{CSS}</style></head><body><main>{body}</main>{FOLD_JS}</body></html>"
     )
 
 
@@ -112,7 +136,7 @@ def _links(task: dict[str, Any], orch: Orchestrator) -> str:
     out = [_safe_link(u, f"PR #{u.rstrip('/').split('/')[-1]}", ("https://github.com/",)) for u in task["pr_urls"]]
     sessions = orch.store.sessions_for_task(task["id"])
     if sessions:
-        out.append(_safe_link(sessions[-1]["url"], "Session log", ("https://app.devin.ai/",)))
+        out.append(_safe_link(sessions[-1]["url"], "Session Link", ("https://app.devin.ai/",)))
     return " · ".join(x for x in out if x)
 
 
@@ -121,9 +145,9 @@ def _need(task: dict[str, Any], orch: Orchestrator) -> str:
     if st is State.PROPOSED:
         return "Approve by applying <code>devin:ready</code>, or close the issue to reject."
     if st is State.BLOCKED:
-        return f"<b>Question:</b> {e(task['blocked_question'] or 'Devin is waiting for input.')}<br><span class=\"muted small\">Answer in a comment, then re-apply devin:ready.</span>"
+        return f"<b>Question:</b> {rich(task['blocked_question'] or 'Devin is waiting for input.')}<br><span class=\"muted small\">Answer in a comment, then re-apply devin:ready.</span>"
     if st is State.FAILED:
-        return f"{e((task['last_summary'] or 'Devin could not finish.')[:300])}<br><span class=\"muted small\">Comment a hint, then re-apply devin:ready.</span>"
+        return f"{rich((task['last_summary'] or 'Devin could not finish.')[:300])}<br><span class=\"muted small\">Comment a hint, then re-apply devin:ready.</span>"
     prs = orch.store.prs_for_task(task["id"])
     v = ", ".join(f"PR #{p['pr_number']} verification {p['verify_status'] or 'not reported'}" for p in prs)
     return f"Review the pull request. <span class=\"muted small\">{e(v)}</span>"
@@ -176,8 +200,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
     flash = f'<div class="flash">{e(msg)}</div>' if msg else ""
     stamp = time.strftime("%H:%M:%S", time.gmtime(now))
     refresh = (
-        f'<div class="muted small" style="margin-top:6px">Updated {stamp} UTC · refreshes itself every 15 seconds · '
-        f'<a href="/?window={e(window)}">Refresh now</a></div>'
+        f'<div class="muted small" style="margin-top:6px">Updated {stamp} UTC · refreshes itself every 10 seconds</div>'
     )
     tabs = " ".join(
         f'<a href="/?window={k}" class="{"on" if k == window else ""}">{v[0]}</a>' for k, v in WINDOWS.items()
@@ -256,8 +279,8 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         if jobs:
             j = jobs[0]
             res = j["result"]
-            link = _safe_link(j["url"], "session", ("https://app.devin.ai/",))
-            detail = e((j["summary"] or "")[:200])
+            link = _safe_link(j["url"], "Session Link", ("https://app.devin.ai/",))
+            detail = rich((j["summary"] or "")[:200])
             if j["status"] == "done" and kind == "scan":
                 detail = e(
                     f"filed {len(res.get('filed', []))}, skipped {len(res.get('skipped', []))}"
@@ -271,19 +294,20 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
                 f'<b>{e(j["status"])}</b> · {detail} {link}</div>'
             )
         return (
-            f'<div class="card"><b>{e(title)}</b><div class="muted small">{e(blurb)}</div>'
-            f'<form method="post" action="{e(action)}" style="margin-top:10px"><button type="submit">Run {e(kind)} now</button></form>{last}</div>'
+            f'<div class="card act"><div class="row"><b>{e(title)}</b>'
+            f'<form method="post" action="{e(action)}"><button type="submit">Run {e(kind)} now</button></form></div>'
+            f'<div class="muted small">{e(blurb)}</div>{last}</div>'
         )
 
-    jobs_html = '<div class="two">' + job_card(
+    jobs_html = '<div class="actions">' + job_card(
         "scan", "Sweep for problems", "A Devin session runs audits and linters and files findings as devin:proposed issues for approval.", "/actions/scan"
     ) + job_card(
         "learn", "Learn from feedback", "Turns human feedback since the last run into one batched PR against knowledge/.", "/actions/learn"
     ) + (
-        '<div class="card"><b>Sync from GitHub</b>'
+        '<div class="card act"><div class="row"><b>Sync from GitHub</b>'
+        '<form method="post" action="/actions/sync"><button type="submit">Sync now</button></form></div>'
         '<div class="muted small">Imports open issues labeled devin:proposed or devin:ready that the bot has not seen '
-        '(for example, created before the webhook existed). Also runs once at startup.</div>'
-        '<form method="post" action="/actions/sync" style="margin-top:10px"><button type="submit">Sync now</button></form></div>'
+        '(for example, created before the webhook existed). Also runs once at startup.</div></div>'
     ) + "</div>"
 
     events = store.list_events(limit=12)
@@ -292,12 +316,12 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
     for ev in events:
         t = by_id.get(ev["task_id"]) if ev["task_id"] else None
         who = f'<a href="/tasks/{t["issue_number"]}">#{t["issue_number"]}</a>' if t else "system"
-        ev_rows.append([_age(ev["ts"], now) + " ago", who, e(ev["kind"]), e(ev["detail"][:160])])
+        ev_rows.append([_age(ev["ts"], now) + " ago", who, e(ev["kind"]), rich(ev["detail"][:160])])
 
     body = (
         f"<h1>superset-helper-eng</h1>"
         f'<div class="sub">Devin finds and fixes issues in <a href="https://github.com/{e(s.target_repo)}">{e(s.target_repo)}</a>; humans review and merge.</div>'
-        f'<div class="chips">{chips}</div>{refresh}{flash}'
+        f'<div class="chips">{chips}</div>{refresh}{flash}{jobs_html}'
         f'<div class="hero">{hero}<div class="tiles">{tiles}</div></div>'
         "<h2>Needs a human</h2>"
         + _table([("Task", False), ("State", False), ("What we need from you", False), ("Waiting", True), ("Links", False)], need_rows, "Nothing is waiting on a person.")
@@ -309,13 +333,13 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         + _table([("Task", False), ("State", False), ("When", True), ("Links", False)], caught_rows, "Nothing yet: these are issues Devin flagged as not needing a fix, which a human then closed.")
         + "<h2>Rejected</h2>"
         + _table([("Task", False), ("State", False), ("When", True)], rej_rows, "Nothing rejected.")
-        + "<h2>Is it working?</h2>" + metrics
-        + "<h2>Actions</h2>" + jobs_html
-        + "<h2>Recent activity</h2>"
+        + '<details class="fold" id="fold-working"><summary>Is it working?</summary>' + metrics + "</details>"
+        + '<details class="fold" id="fold-activity"><summary>Recent activity</summary>'
         + _table([("When", True), ("Task", False), ("Event", False), ("Detail", False)], ev_rows, "No activity yet.")
-        + '<p class="muted small">This page refreshes every 15 seconds. JSON: <a href="/api/status">/api/status</a> · <a href="/api/metrics">/api/metrics</a> · <a href="/api/tasks">/api/tasks</a></p>'
+        + "</details>"
+        + '<p class="muted small">This page refreshes every 10 seconds. JSON: <a href="/api/status">/api/status</a> · <a href="/api/metrics">/api/metrics</a> · <a href="/api/tasks">/api/tasks</a></p>'
     )
-    return _page("superset-helper-eng", body)
+    return _page("superset-helper-eng", body, refresh_url=f"/?window={e(window)}")
 
 
 def render_task(orch: Orchestrator, issue_number: int) -> str | None:
@@ -330,17 +354,17 @@ def render_task(orch: Orchestrator, issue_number: int) -> str | None:
     feedback = store.feedback_since(0, task["id"])
 
     s_rows = [
-        [str(s["attempt"]), _safe_link(s["url"], s["session_id"][:12], ("https://app.devin.ai/",)), e(s["status"] or ""), e(s["outcome"] or "in progress"), _age(s["created_at"], now) + " ago"]
+        [str(s["attempt"]), _safe_link(s["url"], "Session Link", ("https://app.devin.ai/",)), e(s["status"] or ""), e(s["outcome"] or "in progress"), _age(s["created_at"], now) + " ago"]
         for s in sessions
     ]
     p_rows = [
         [_safe_link(p["pr_url"], f"PR #{p['pr_number']}", ("https://github.com/",)), e(p["state"]), e(p["verify_status"] or "not reported"), _safe_link(p["verify_url"], "run", ("https://github.com/",))]
         for p in prs
     ]
-    e_rows = [[time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ev["ts"])) + " UTC", e(ev["kind"]), e(ev["detail"][:300])] for ev in events]
+    e_rows = [[time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ev["ts"])) + " UTC", e(ev["kind"]), rich(ev["detail"][:300])] for ev in events]
     f_rows = [[_age(f["ts"], now) + " ago", e(f["author"] or ""), e(f["kind"]), e(f["text"][:400])] for f in feedback]
     guidance = f"<h2>Guidance carried into the next session</h2><pre>{e(task['guidance'])}</pre>" if task["guidance"] else ""
-    question = f"<h2>Devin's question</h2><pre>{e(task['blocked_question'])}</pre>" if task["blocked_question"] else ""
+    question = f"<h2>Devin's question</h2><pre>{rich(task['blocked_question'])}</pre>" if task["blocked_question"] else ""
     body = (
         '<p><a href="/">&larr; Dashboard</a></p>'
         f"<h1>#{issue_number} {e(task['title'])}</h1>"
