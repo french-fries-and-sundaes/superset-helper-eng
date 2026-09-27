@@ -57,7 +57,7 @@ To further integrate this, a few steps are worth prioritizing:
 1. **Revise the knowledge base** to be better adapted to this codebase, so Sweep, Triage, and Development
    start from a stronger baseline.
 2. **Turn Sweep and Learn into periodic cron jobs**, calibrated to avoid noise.
-3. **Right-size parallel Devin sessions.** Work out the cost of an average completed task, this
+3. **Calibrate parallel Devin sessions.** Work out the cost of an average completed task, this
    organization's task throughput, and its budget, to land on the right number of concurrent sessions.
 4. **Align the dashboard with leadership's KPIs.** Understand what leadership is tracking, find the right
    proxies to surface at the top of the dashboard, and move everything else needed for diagnosis behind a
