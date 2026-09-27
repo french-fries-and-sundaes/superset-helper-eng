@@ -5,7 +5,7 @@ An event-driven automation that uses **Devin as its worker** to fix engineering 
 
 ## A. Problem
 
-Engineers face a long tail of small, well-understood work. Each item is easy to fix on its own, but the
+Engineers face a long tail of small, well-understood tasks that. Each item is easy to fix on its own, but the
 volume of them — and the constant context-switching required to handle them — wastes a lot of engineering
 time.
 
