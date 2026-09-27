@@ -173,7 +173,7 @@ class DashboardControlTests(unittest.TestCase):
         self.assertNotIn("<details class=\"fold\" id=\"fold-working\" open", page)
         self.assertIn('<details class="fold" id="fold-sync">', page)
         self.assertGreater(page.index("Sync now"), page.index("Recent activity"))  # tucked away at the bottom
-        self.assertLess(page.index("Run scan now"), page.index("Needs a human</h2>"))
+        self.assertLess(page.index(">SCAN<"), page.index("Needs a human</h2>"))
         self.assertRegex(page, r"Updated \d\d:\d\d:\d\d UTC")
 
     def test_sync_button_explains_dry_run(self):

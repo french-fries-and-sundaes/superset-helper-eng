@@ -197,3 +197,26 @@ class NeedsAHumanOrderTests(unittest.TestCase):
         order = [int(x) for x in __import__("re").findall(r"task-(\d)", section)]
         # 5 (older review) before 4, then blocked 6 (older) before 3, then failed 2, then proposed 1
         self.assertEqual(order, [5, 4, 6, 3, 2, 1])
+
+
+class TileLayoutTests(unittest.TestCase):
+    def test_no_sessions_cap_tile_and_the_four_tiles_form_a_pair_of_rows(self):
+        from app.dashboard import render_dashboard
+        from tests.helpers import build
+
+        orch, *_ = build()
+        page = render_dashboard(orch)
+        self.assertNotIn("Sessions today", page)
+        self.assertIn("repeat(2,minmax(0,1fr))", page)
+        for label in ("Backlog", "In progress", "Out for review", "Needs a human"):
+            self.assertIn(label, page)
+
+    def test_scan_and_learn_buttons_read_scan_and_learn(self):
+        from app.dashboard import render_dashboard
+        from tests.helpers import build
+
+        orch, *_ = build()
+        page = render_dashboard(orch)
+        self.assertIn(">SCAN<", page)
+        self.assertIn(">LEARN<", page)
+        self.assertIn(">Sync now<", page)  # unchanged

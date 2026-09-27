@@ -18,11 +18,11 @@ class Clock:
         return self.t
 
 
-def build(max_per_day=20, devin=None):
+def build(devin=None):
     store = Store(":memory:")
     devin = devin or FakeDevinClient(REPO)
     clock = Clock()
-    settings = Settings(max_sessions_per_day=max_per_day, target_repo=REPO, verify_mode="off")
+    settings = Settings(target_repo=REPO, verify_mode="off")
     return Orchestrator(store, devin, settings, now=clock, knowledge="RULES"), store, devin, clock
 
 
@@ -69,18 +69,6 @@ class OrchestratorTests(unittest.TestCase):
         orch.tick()
         self.assertEqual(orch.request_ready(REPO, 1, "t", ""), "ignored")  # in progress now
         self.assertEqual(len(devin._sessions), 1)
-
-    def test_daily_limit_holds_extra_tasks_in_ready(self):
-        orch, store, devin, clock = build(max_per_day=2)
-        for i in (1, 2, 3):
-            orch.request_ready(REPO, i, f"t{i}", "")
-        orch.dispatch_ready()
-        self.assertEqual(len(devin._sessions), 2)
-        self.assertEqual(state_of(store, 3), "ready")
-        # A day later the guard has rolled over and the third task starts.
-        clock.t += 24 * 3600 + 1
-        orch.dispatch_ready()
-        self.assertEqual(state_of(store, 3), "in-progress")
 
     def test_human_reapplies_ready_after_blocked_starts_a_fresh_session(self):
         orch, store, devin, _ = build()

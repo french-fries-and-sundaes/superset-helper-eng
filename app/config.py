@@ -53,7 +53,6 @@ class Settings:
     devin_branch_prefix: str = "devin/"  # branch prefix of Devin's PRs; recognises its merged fixes in history
 
     # Guards
-    max_sessions_per_day: int = 20  # rolling 24h; the primary spend guard (scan/learn count too)
     max_acu_per_session: int | None = None  # optional Devin-side cap per session
     scan_max_findings: int = 7  # per sweep, so a scan cannot flood the backlog
 
@@ -93,7 +92,6 @@ class Settings:
             verify_workflow_name=env.get("VERIFY_WORKFLOW_NAME", cls.verify_workflow_name).strip(),
             verify_timeout_minutes=int(env.get("VERIFY_TIMEOUT_MINUTES", cls.verify_timeout_minutes)),
             devin_branch_prefix=env.get("DEVIN_BRANCH_PREFIX", cls.devin_branch_prefix).strip() or cls.devin_branch_prefix,
-            max_sessions_per_day=_int(env, "MAX_SESSIONS_PER_DAY", 20),
             max_acu_per_session=_opt_int(env, "MAX_ACU_PER_SESSION"),
             scan_max_findings=_int(env, "SCAN_MAX_FINDINGS", 7),
             allow_mode_change=_bool(env, "ALLOW_MODE_CHANGE", False),

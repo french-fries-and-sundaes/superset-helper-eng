@@ -64,7 +64,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .hero .big{flex:1 1 280px}
 .big .num{font-size:56px;line-height:1.05;font-weight:600}
 .big .cap{color:var(--ink2)}
-.tiles{flex:3 1 520px;min-width:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tiles{flex:3 1 420px;min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .tile .lab{color:var(--ink2);font-size:13px}.tile .val{font-size:30px;font-weight:600;line-height:1.2}
 .tile .note{color:var(--muted);font-size:12px}
 .meter{height:8px;border-radius:4px;background:var(--track);margin:8px 0 4px;overflow:hidden}
@@ -91,7 +91,7 @@ details.fold[open]>summary{margin-bottom:10px}
 .muted{color:var(--muted)}.small{font-size:13px}
 .tabs a{margin-right:10px}.tabs .on{font-weight:600;color:var(--ink);text-decoration:underline}
 pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:10px;font-size:13px}
-@media (max-width:700px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.big .num{font-size:44px}th,td{padding:8px}table{min-width:620px}}
+@media (max-width:700px){.tiles{grid-template-columns:repeat(1,minmax(0,1fr))}.big .num{font-size:44px}th,td{padding:8px}table{min-width:620px}}
 """
 
 
@@ -167,15 +167,6 @@ def _table(headers: list[tuple[str, bool]], rows: list[list[str]], empty: str) -
     return f'<div class="tbl"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
 
 
-def _meter(used: int, limit: int) -> str:
-    pct = 0 if limit <= 0 else min(100, round(100 * used / limit))
-    color = "var(--critical)" if pct >= 90 else "var(--warning)" if pct >= 70 else "var(--accent)"
-    status = "at the limit" if pct >= 100 else "approaching the limit" if pct >= 70 else "within budget"
-    return (
-        f'<div class="meter" role="img" aria-label="{used} of {limit} sessions used"><span style="width:{pct}%;background:{color}"></span></div>'
-        f'<div class="note">{used} of {limit} in the last 24h · {status}</div>'
-    )
-
 
 def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> str:
     now = time.time()
@@ -226,7 +217,6 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         + tile("In progress", counts["in-progress"], f"{working} Devin running, {verifying} checking the PR")
         + tile("Out for review", counts["in-review"], "waiting for a human")
         + tile("Needs a human", len(needs), "proposed, blocked, failed, in review")
-        + f'<div class="card tile" style="grid-column:span 2"><div class="lab">Sessions today</div>{_meter(summary["sessions_last_24h"], summary["max_sessions_per_day"])}</div>'
     )
 
     need_rows = [
@@ -298,7 +288,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
             )
         return (
             f'<div class="card act"><div class="row"><b>{e(title)}</b>'
-            f'<form method="post" action="{e(action)}"><button type="submit">Run {e(kind)} now</button></form></div>'
+            f'<form method="post" action="{e(action)}"><button type="submit">{e(kind.upper())}</button></form></div>'
             f'<div class="muted small">{e(blurb)}</div>{last}</div>'
         )
 

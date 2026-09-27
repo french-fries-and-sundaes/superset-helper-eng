@@ -6,8 +6,8 @@ Design notes
     worker loop can run at the same time without double-starting a session.
   * A task is "claimed" (READY -> IN_PROGRESS) BEFORE the Devin API call, and released
     back to READY if the call fails for a retryable reason.
-  * MAX_SESSIONS_PER_DAY is a rolling 24h count of sessions started (fix, scan, and learn).
-    It is the main spend guard, because the API's acus_consumed field did not report usage.
+  * There is no daily session cap: the API's acus_consumed field did not report usage, so cost is
+    bounded instead by MAX_ACU_PER_SESSION (optional) and Devin's own account-level usage limit.
   * Verification gate: when Devin reports `done`, the task stays IN_PROGRESS with
     verify_status='pending' until the GitHub Actions workflow on the fork reports for the
     PR; pass -> IN_REVIEW, fail -> FAILED. (VERIFY_MODE=off skips the gate.)
@@ -232,9 +232,6 @@ class Orchestrator:
     def dispatch_ready(self) -> int:
         started = 0
         for task in self.store.list_tasks(State.READY):
-            if self.sessions_last_24h() >= self.settings.max_sessions_per_day:
-                log.warning("daily session limit (%d) reached; tasks stay in READY", self.settings.max_sessions_per_day)
-                break
             if self._start(task):
                 started += 1
         return started
@@ -573,8 +570,6 @@ class Orchestrator:
         running = [j for j in self.store.running_jobs() if j["kind"] == kind]
         if running:
             return {"status": "already_running", "job": running[0]["id"]}
-        if self.sessions_last_24h() >= self.settings.max_sessions_per_day:
-            return {"status": "limit_reached", "limit": self.settings.max_sessions_per_day}
         return None
 
     def start_scan(self) -> dict[str, Any]:
@@ -698,7 +693,6 @@ class Orchestrator:
             "counts": self.store.counts_by_state(),
             "verifying": sum(1 for t in tasks if t["verify_status"] == "pending"),
             "sessions_last_24h": self.sessions_last_24h(),
-            "max_sessions_per_day": self.settings.max_sessions_per_day,
             "github_sync": "dry-run" if getattr(self.github, "dry_run", False) else "live",
             "verify_mode": self.settings.verify_mode,
             "devin_mode": self.settings.devin_mode,

@@ -197,8 +197,6 @@ def _flash(kind: str, result: dict[str, Any]) -> str:
         return f"{kind} started (session {result.get('url', '')}). Results appear here when Devin finishes."
     if status == "already_running":
         return f"A {kind} is already running."
-    if status == "limit_reached":
-        return f"Daily session limit ({result.get('limit')}) reached; try again later."
     if status == "nothing_new":
         return "Nothing new to learn from since the last run."
     return f"{kind} could not start: {result.get('detail', status)}"

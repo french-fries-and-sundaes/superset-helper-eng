@@ -66,15 +66,6 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(second["status"], "already_running")
         self.assertEqual(second["job"], first["job"])
 
-    def test_scan_counts_toward_the_daily_session_limit(self):
-        orch, store, *_ = build(max_sessions_per_day=1)
-        orch.start_scan()
-        finish_jobs(orch)
-        orch.request_ready(REPO, 1, "x", "")
-        orch.dispatch_ready()
-        self.assertEqual(state_of(store, 1), "ready")  # the scan used the only session
-        self.assertEqual(orch.start_scan()["status"], "limit_reached")
-
     def test_a_github_error_on_one_issue_does_not_lose_the_others(self):
         class Flaky(RecordingGitHub):
             n = 0
