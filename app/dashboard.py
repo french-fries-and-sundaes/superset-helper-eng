@@ -326,7 +326,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
 
     body = (
         '<div class="dash">'
-        f"<h1>superset-helper-eng</h1>"
+        f"<h1>Superset Helper Bot 🤖</h1>"
         f'<div class="sub">Devin finds and fixes issues in <a href="https://github.com/{e(s.target_repo)}">{e(s.target_repo)}</a>; humans review and merge.</div>'
         f'<div class="chips">{chips}</div>{refresh}{flash}{jobs_html}'
         f'<div class="hero">{hero}<div class="tiles">{tiles}</div></div>'
@@ -348,7 +348,7 @@ def render_dashboard(orch: Orchestrator, window: str = "7d", msg: str = "") -> s
         + '<p class="muted small">This page refreshes every 10 seconds. JSON: <a href="/api/status">/api/status</a> · <a href="/api/metrics">/api/metrics</a> · <a href="/api/tasks">/api/tasks</a></p>'
         + "</div>"
     )
-    return _page("superset-helper-eng", body, refresh_url=f"/?window={e(window)}")
+    return _page("Superset Helper Bot 🤖", body, refresh_url=f"/?window={e(window)}")
 
 
 def render_task(orch: Orchestrator, issue_number: int) -> str | None:
